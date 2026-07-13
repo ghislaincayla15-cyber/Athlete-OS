@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 
 clear
-echo "Athlete OS v4.1.0 - installation iPhone"
+echo "Athlete OS v4.1.1 - installation iPhone"
 echo ""
 
 IP="$(ipconfig getifaddr en0 2>/dev/null)"
@@ -22,7 +22,7 @@ echo "1. Garde cette fenetre ouverte."
 echo "2. Sur ton iPhone, ouvre Safari."
 echo "3. Va a cette adresse :"
 echo ""
-echo "   http://$IP:8765/index.html?v=4.1.0"
+echo "   http://$IP:8765/index.html?v=4.1.1"
 echo ""
 echo "4. Dans Safari : bouton Partager > Ajouter a l'ecran d'accueil."
 echo ""

@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.1.0";
+  const APP_VERSION = "4.1.1";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -989,10 +989,10 @@
         rpe: "7 à 8",
         exercises: [
           { name: "Squat", detail: "4 × 4-6 · RPE 7-8 · repos 3 min" },
-          { name: "Presse ou fentes marchées", detail: "3 × 8-10 · RPE 7" },
-          { name: "Leg curl", detail: "3 × 8-12 · RPE 8" },
-          { name: "Mollets debout", detail: "3 × 10-12 · descente 3 s · protocole mollet" },
-          { name: "Gainage lesté", detail: "3 séries" },
+          { name: "Presse ou fentes marchées", detail: "3 × 8-10 · RPE 7 · repos 2 min" },
+          { name: "Leg curl", detail: "3 × 8-12 · RPE 8 · repos 90 s" },
+          { name: "Mollets debout", detail: "3 × 10-12 · descente 3 s · repos 90 s · protocole mollet" },
+          { name: "Gainage lesté", detail: "3 séries · repos 60 s" },
         ],
       },
       2: {
@@ -1003,10 +1003,10 @@
         rpe: "7 à 8",
         exercises: [
           { name: "Développé couché", detail: "4 × 4-6 · RPE 7-8 · repos 3 min" },
-          { name: "Tractions (lestées si > 8)", detail: "4 × 5-8 · RPE 8" },
-          { name: "Développé militaire", detail: "3 × 6-8 · RPE 7,5" },
-          { name: "Rowing haltère unilatéral", detail: "3 × 8-10 · RPE 8" },
-          { name: "Face pull", detail: "3 × 12-15 · RPE 8" },
+          { name: "Tractions (lestées si > 8)", detail: "4 × 5-8 · RPE 8 · repos 2-3 min" },
+          { name: "Développé militaire", detail: "3 × 6-8 · RPE 7,5 · repos 2 min" },
+          { name: "Rowing haltère unilatéral", detail: "3 × 8-10 · RPE 8 · repos 90 s" },
+          { name: "Face pull", detail: "3 × 12-15 · RPE 8 · repos 60 s" },
         ],
       },
       3: {
@@ -1029,10 +1029,10 @@
         rpe: "7 à 8",
         exercises: [
           { name: "Soulevé de terre roumain", detail: "4 × 6-8 · RPE 7 · repos 3 min" },
-          { name: "Squat bulgare", detail: "3 × 8-10 / jambe · RPE 8" },
-          { name: "Hip thrust", detail: "3 × 8-12 · RPE 8" },
-          { name: "Mollets assis (soléaire)", detail: "3 × 12-15 · tempo contrôlé · protocole mollet" },
-          { name: "Gainage anti-rotation", detail: "3 séries (Pallof, portés)" },
+          { name: "Squat bulgare", detail: "3 × 8-10 / jambe · RPE 8 · repos 90 s" },
+          { name: "Hip thrust", detail: "3 × 8-12 · RPE 8 · repos 2 min" },
+          { name: "Mollets assis (soléaire)", detail: "3 × 12-15 · tempo contrôlé · repos 60 s · protocole mollet" },
+          { name: "Gainage anti-rotation", detail: "3 séries (Pallof, portés) · repos 60 s" },
         ],
       },
       5: {
@@ -1042,11 +1042,11 @@
         duration: 60,
         rpe: "8",
         exercises: [
-          { name: "Développé incliné haltères", detail: "4 × 8-10 · RPE 8" },
-          { name: "Tirage vertical prise neutre", detail: "3 × 8-12 · RPE 8" },
-          { name: "Élévations latérales", detail: "4 × 12-15 · RPE 8-9" },
-          { name: "Rowing câble assis", detail: "3 × 10-12 · RPE 8" },
-          { name: "Curl incliné + triceps corde", detail: "superset 3 × 10-12" },
+          { name: "Développé incliné haltères", detail: "4 × 8-10 · RPE 8 · repos 2 min" },
+          { name: "Tirage vertical prise neutre", detail: "3 × 8-12 · RPE 8 · repos 90 s" },
+          { name: "Élévations latérales", detail: "4 × 12-15 · RPE 8-9 · repos 60 s" },
+          { name: "Rowing câble assis", detail: "3 × 10-12 · RPE 8 · repos 90 s" },
+          { name: "Curl incliné + triceps corde", detail: "superset 3 × 10-12 · repos 75 s" },
         ],
       },
       6: {
