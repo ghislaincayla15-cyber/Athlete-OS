@@ -73,3 +73,29 @@ Pour un comportement PWA complet avec cache offline fiable sur iOS, utiliser une
 - **Interface allégée** : badges redondants supprimés, statuts en point coloré + texte, mentions légales en note discrète, sous-titres masqués sur mobile.
 - **Thème clair** conservé en secondaire (bouton soleil/lune). Le sombre est appliqué par défaut une seule fois à la mise à jour ; ton choix est ensuite mémorisé.
 - Couleurs de la barre iOS et du manifest alignées sur le nouveau fond.
+
+## Mise à jour : Bloc 1 intégré à l'app (v4.1.0)
+
+- **Programme réel** : le vrai Bloc 1 (10 semaines, recomposition & base) remplace la démo dans l'onglet Programme dès que la date de départ est renseignée — séances muscu/course/repos, phases, deload semaine 6, calendrier de la semaine, statistiques de complétion.
+- **Coach programme-aware** : la décision du jour, la carte de séance et le chat référencent la vraie séance planifiée (plus de texte générique).
+- **Démarrage anticipé possible** depuis le bouton « Commencer dès cette semaine ».
+
+## Correctif : temps de repos manquants (v4.1.1)
+
+- Les 18 exercices du Bloc 1 affichaient des séries/reps/RPE mais pas toujours le temps de repos : corrigé, chaque exercice précise maintenant son repos.
+
+## Mise à jour : calendrier cliquable & import Apple Santé fiabilisé (v4.2.0)
+
+- **Calendrier de la semaine cliquable** : touche n'importe quel jour à venir pour voir le détail des exercices avant le jour J, plus besoin de découvrir la séance le matin même.
+- **Import Apple Santé réécrit en streaming** : l'ancien import chargeait tout le fichier `export.xml` en mémoire et pouvait échouer silencieusement sur les gros fichiers (export réel de plusieurs centaines de Mo). Le nouvel import lit le fichier par tranches de 6 Mo avec barre de progression, gère le format de date Apple, et remonte des erreurs explicites au lieu d'un échec silencieux. Le poids importé alimente automatiquement les jours du journal qui n'ont pas de pesée manuelle.
+- **Correctif** : `RUN_KINDS` mal placé provoquait une erreur bloquante au chargement dans certains cas ; corrigé.
+
+## Mise à jour : structure phasée du Bloc 1 — durée, volume, qualités athlétiques (v4.3.0)
+
+Pourquoi ce changement : le Bloc 1 avait 5 exercices par séance muscu avec des repos longs (3 min sur les mouvements lourds) pour respecter le RPE cible sans compromettre la technique — un choix volontaire pour les semaines de calibration (S1-S2). Une fois cette phase passée, et la disponibilité en temps confirmée, il devenait pertinent d'ajouter du volume et un vrai travail de qualités athlétiques (priorité 3, jusque-là peu servie par le bloc).
+
+- **S1-S2 (calibration)** : séances inchangées, 60 min, pour garder une calibration de charge propre.
+- **S3-S5 et S7-S9 (accumulation / intensification)** : 6ᵉ exercice accessoire ajouté sur chaque séance muscu (extension lombaire, curl biceps, abduction de hanche, élévations Y selon le jour) ; séances Haut A (mardi) et Haut B (vendredi) enrichies d'un circuit qualités athlétiques (bondissements latéraux amplitude faible, départs sprint courts, lancers de médecine-ball) — jours haut du corps choisis pour épargner le mollet, avec rappel explicite de la règle d'arrêt (douleur > 3/10). Durée : 70 min (jours bas du corps), 80 min (jours haut du corps).
+- **S1-S2, en parallèle** : version légère du circuit athlétique (médecine-ball, gainage dynamique, mobilité, sans impact) déjà active sur Haut A/Haut B, pour démarrer le travail de qualités athlétiques sans attendre S3.
+- **S6 (deload)** : aucun ajout, séances resserrées à 40 min, conformément au volume -40 % déjà prévu.
+- **S10 (évaluation)** : conserve la structure enrichie (accessoire + circuit), les top sets et le test course restent pilotés par le RPE/la charge, pas par la liste d'exercices.

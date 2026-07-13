@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.2.0";
+  const APP_VERSION = "4.3.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -988,6 +988,8 @@
         title: "Bas A — Force",
         focus: "Dominante squat · protocole mollet (debout)",
         duration: 60,
+        durationExtended: 70,
+        deloadDuration: 40,
         rpe: "7 à 8",
         exercises: [
           { name: "Squat", detail: "4 × 4-6 · RPE 7-8 · repos 3 min" },
@@ -996,12 +998,15 @@
           { name: "Mollets debout", detail: "3 × 10-12 · descente 3 s · repos 90 s · protocole mollet" },
           { name: "Gainage lesté", detail: "3 séries · repos 60 s" },
         ],
+        extraExercise: { name: "Extension lombaire (banc à lombaires)", detail: "3 × 12 · RPE 7 · repos 90 s · dès S3" },
       },
       2: {
         kind: "muscu",
         title: "Haut A — Force",
         focus: "Développé couché + tractions, bases de force",
         duration: 60,
+        durationExtended: 80,
+        deloadDuration: 40,
         rpe: "7 à 8",
         exercises: [
           { name: "Développé couché", detail: "4 × 4-6 · RPE 7-8 · repos 3 min" },
@@ -1010,6 +1015,19 @@
           { name: "Rowing haltère unilatéral", detail: "3 × 8-10 · RPE 8 · repos 90 s" },
           { name: "Face pull", detail: "3 × 12-15 · RPE 8 · repos 60 s" },
         ],
+        extraExercise: { name: "Curl biceps barre EZ", detail: "3 × 10-12 · RPE 8 · repos 75 s · dès S3" },
+        athleticCircuit: {
+          light: [
+            { name: "Lancers de médecine-ball (rotation)", detail: "3 × 8 / côté · circuit qualités athlétiques (léger, sans impact) · S1-S2" },
+            { name: "Gainage anti-rotation dynamique (Pallof)", detail: "3 × 10 / côté · circuit qualités athlétiques (léger) · S1-S2" },
+            { name: "Mobilité hanches / chevilles", detail: "5 min en continu · circuit qualités athlétiques (léger) · S1-S2" },
+          ],
+          full: [
+            { name: "Bondissements latéraux (amplitude faible)", detail: "3 × 6 / côté · circuit qualités athlétiques · dès S3 · stop si douleur mollet > 3/10" },
+            { name: "Départs sprint arrêtés 10-15 m", detail: "4 répétitions, allure progressive (jamais au max) · circuit qualités athlétiques · dès S3 · stop si douleur mollet > 3/10" },
+            { name: "Lancers de médecine-ball (rotation)", detail: "3 × 8 / côté · circuit qualités athlétiques · dès S3" },
+          ],
+        },
       },
       3: {
         kind: "course",
@@ -1028,6 +1046,8 @@
         title: "Bas B — Hinge & unilatéral",
         focus: "Chaîne postérieure · protocole mollet (soléaire)",
         duration: 60,
+        durationExtended: 70,
+        deloadDuration: 40,
         rpe: "7 à 8",
         exercises: [
           { name: "Soulevé de terre roumain", detail: "4 × 6-8 · RPE 7 · repos 3 min" },
@@ -1036,12 +1056,15 @@
           { name: "Mollets assis (soléaire)", detail: "3 × 12-15 · tempo contrôlé · repos 60 s · protocole mollet" },
           { name: "Gainage anti-rotation", detail: "3 séries (Pallof, portés) · repos 60 s" },
         ],
+        extraExercise: { name: "Abduction de hanche (machine ou bande élastique)", detail: "3 × 15 / jambe · RPE 7 · repos 60 s · dès S3" },
       },
       5: {
         kind: "muscu",
         title: "Haut B — Hypertrophie",
         focus: "Volume épaules, dos, bras — RPE maîtrisé",
         duration: 60,
+        durationExtended: 80,
+        deloadDuration: 40,
         rpe: "8",
         exercises: [
           { name: "Développé incliné haltères", detail: "4 × 8-10 · RPE 8 · repos 2 min" },
@@ -1050,6 +1073,19 @@
           { name: "Rowing câble assis", detail: "3 × 10-12 · RPE 8 · repos 90 s" },
           { name: "Curl incliné + triceps corde", detail: "superset 3 × 10-12 · repos 75 s" },
         ],
+        extraExercise: { name: "Élévations Y (banc incliné)", detail: "3 × 12-15 · RPE 7-8 · repos 60 s · dès S3" },
+        athleticCircuit: {
+          light: [
+            { name: "Lancers de médecine-ball (rotation)", detail: "3 × 8 / côté · circuit qualités athlétiques (léger, sans impact) · S1-S2" },
+            { name: "Gainage anti-rotation dynamique (Pallof)", detail: "3 × 10 / côté · circuit qualités athlétiques (léger) · S1-S2" },
+            { name: "Mobilité hanches / chevilles", detail: "5 min en continu · circuit qualités athlétiques (léger) · S1-S2" },
+          ],
+          full: [
+            { name: "Bondissements latéraux (amplitude faible)", detail: "3 × 6 / côté · circuit qualités athlétiques · dès S3 · stop si douleur mollet > 3/10" },
+            { name: "Départs sprint arrêtés 10-15 m", detail: "4 répétitions, allure progressive (jamais au max) · circuit qualités athlétiques · dès S3 · stop si douleur mollet > 3/10" },
+            { name: "Lancers de médecine-ball (rotation)", detail: "3 × 8 / côté · circuit qualités athlétiques · dès S3" },
+          ],
+        },
       },
       6: {
         kind: "course",
@@ -1111,7 +1147,29 @@
 
   function programSessionFor(key = dateKey()) {
     const weekday = new Date(`${key}T12:00:00`).getDay();
-    return BLOC1.days[weekday] || null;
+    const base = BLOC1.days[weekday];
+    if (!base) return null;
+    if (base.kind !== "muscu") return base;
+
+    const week = programWeek(key);
+    const isDeloadWeek = week === BLOC1.deloadWeek;
+    const isPhasedUp = week !== null && week >= 3 && !isDeloadWeek;
+    const isCalibration = week !== null && week >= 1 && week <= 2;
+
+    let exercises = [...base.exercises];
+    if (isPhasedUp && base.extraExercise) exercises = exercises.concat(base.extraExercise);
+    if (base.athleticCircuit) {
+      if (isPhasedUp) exercises = exercises.concat(base.athleticCircuit.full);
+      else if (isCalibration) exercises = exercises.concat(base.athleticCircuit.light);
+    }
+
+    const duration = isDeloadWeek
+      ? base.deloadDuration ?? base.duration
+      : isPhasedUp
+        ? base.durationExtended ?? base.duration
+        : base.duration;
+
+    return { ...base, exercises, duration };
   }
 
   function formatFrDate(key) {
