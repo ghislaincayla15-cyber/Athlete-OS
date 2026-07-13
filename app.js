@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.1.1";
+  const APP_VERSION = "4.2.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -164,6 +164,7 @@
     theme: "dark",
     uiVersion: 2,
     settingsOpen: false,
+    expandedProgramDay: null,
     journal: {},
     program: {
       blockId: "bloc-1",
@@ -200,6 +201,7 @@
     imports: {
       health: null,
       error: "",
+      progress: 0,
     },
   };
 
@@ -2238,6 +2240,11 @@
           <p class="small-text">Le traitement se fait localement dans ton navigateur. Le fichier n’est envoyé nulle part.</p>
         </div>
         ${
+          state.imports.progress
+            ? `<div class="notice"><strong>Import en cours</strong><p id="import-progress">Analyse en cours : préparation…</p></div>`
+            : ""
+        }
+        ${
           state.imports.error
             ? `<div class="notice"><strong>Import impossible</strong><p>${escapeHtml(state.imports.error)}</p></div>`
             : ""
@@ -2265,106 +2272,204 @@
 
   async function importAppleHealthFile(file) {
     if (!file) return;
-    if (file.name.toLowerCase().endsWith(".zip")) {
-      state.imports.error = "Safari ne peut pas lire directement le ZIP dans cette version. Décompresse l’export Apple Santé, puis importe le fichier export.xml.";
+    const lowerName = file.name.toLowerCase();
+    if (lowerName.endsWith(".zip")) {
+      state.imports.error =
+        "C'est encore le ZIP. Dans l'app Fichiers, touche le zip pour le décompresser : un dossier « apple_health_export » apparaît. Choisis le fichier export.xml qui est dedans.";
+      persist();
+      render();
+      return;
+    }
+    if (lowerName.includes("cda")) {
+      state.imports.error = "Ce fichier est export_cda.xml (format clinique, inutilisable ici). Choisis l'autre fichier : export.xml.";
       persist();
       render();
       return;
     }
 
+    state.imports.error = "";
+    state.imports.progress = 1;
+    render();
+
     try {
-      const text = await file.text();
-      const parsed = parseAppleHealthXml(text, file.name);
+      const parsed = await parseAppleHealthStream(file, (pct) => {
+        const el = document.getElementById("import-progress");
+        if (el) el.textContent = `Analyse en cours : ${pct} % de ${Math.max(1, Math.round(file.size / 1048576))} Mo — ne quitte pas cet écran.`;
+      });
       state.imports.health = parsed;
       state.imports.error = "";
-      state.dataMode = "custom";
+      state.imports.progress = 0;
+      if (state.dataMode !== "demo") state.dataMode = "custom";
       state.sources.apple = "connected";
       state.sources.import = "connected";
-      state.activeTab = "today";
-      state.activeTodayView = "summary";
-      addCoachMessage("coach", `Import Apple Santé terminé : ${parsed.records} enregistrements lus. Je peux maintenant utiliser les données disponibles, avec prudence si l’historique est incomplet.`);
+
+      // Fusionne les pesées quotidiennes dans le journal, sans écraser une saisie manuelle.
+      let mergedWeights = 0;
+      Object.entries(parsed.dailyWeights || {}).forEach(([key, weight]) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+        const entry = day(key);
+        const current = Number(entry.weight);
+        if (!Number.isFinite(current) || current <= 0) {
+          entry.weight = Math.round(weight * 10) / 10;
+          mergedWeights += 1;
+        }
+      });
+
+      addCoachMessage(
+        "coach",
+        `Import Apple Santé terminé : ${parsed.records} enregistrements utiles lus${
+          mergedWeights ? `, ${mergedWeights} pesée(s) ajoutée(s) au journal (moyenne 7 j et tendances mises à jour)` : ""
+        }. Sommeil, FC repos et HRV alimentent maintenant le readiness.`
+      );
       persist();
       render();
     } catch (error) {
+      state.imports.progress = 0;
       state.imports.error = error.message || "Le fichier n’a pas pu être importé.";
       persist();
       render();
     }
   }
 
-  function parseAppleHealthXml(text, fileName) {
-    const doc = new DOMParser().parseFromString(text, "application/xml");
-    if (doc.querySelector("parsererror")) {
-      throw new Error("Ce fichier ne ressemble pas à un export XML Apple Santé valide.");
-    }
+  function parseAppleDate(value) {
+    if (!value) return null;
+    // Format Apple : "2026-07-10 07:12:34 +0200" → ISO fiable sur tous les navigateurs.
+    const iso = value.replace(" ", "T").replace(/ ([+-])(\d{2}):?(\d{2})$/, "$1$2:$3");
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
 
-    const records = [...doc.querySelectorAll("Record")];
-    if (!records.length) {
-      throw new Error("Aucun enregistrement Apple Santé trouvé dans ce fichier.");
-    }
-
+  async function parseAppleHealthStream(file, onProgress) {
+    const CHUNK = 6 * 1024 * 1024;
+    const TAIL_MAX = 1024 * 1024;
+    let offset = 0;
+    let tail = "";
+    let records = 0;
+    let sawAnyRecord = false;
     const latest = {};
     const dailySteps = new Map();
     const dailyDistance = new Map();
     const dailySleep = new Map();
+    const dailyWeights = {};
+    const recordRe = /<Record\s[^>]*?\/>/g;
 
-    const setLatest = (key, record, value, unit) => {
-      const end = new Date(record.getAttribute("endDate") || record.getAttribute("startDate") || "");
-      if (Number.isNaN(end.getTime())) return;
-      if (!latest[key] || end > latest[key].date) {
-        latest[key] = { value, unit, date: end.toISOString() };
-      }
+    const attr = (chunk, name) => {
+      const marker = `${name}="`;
+      const start = chunk.indexOf(marker);
+      if (start === -1) return "";
+      const end = chunk.indexOf('"', start + marker.length);
+      return end === -1 ? "" : chunk.slice(start + marker.length, end);
     };
 
-    records.forEach((record) => {
-      const type = record.getAttribute("type") || "";
-      const rawValue = record.getAttribute("value");
-      const value = Number.parseFloat(rawValue);
-      const unit = record.getAttribute("unit") || "";
-      const start = new Date(record.getAttribute("startDate") || "");
-      const end = new Date(record.getAttribute("endDate") || "");
-      const day = Number.isNaN(start.getTime()) ? "" : start.toISOString().slice(0, 10);
+    const setLatest = (key, stamp, value) => {
+      if (!stamp) return;
+      if (!latest[key] || stamp > latest[key].date) latest[key] = { value, date: stamp };
+    };
 
-      if (type.includes("BodyMass") && Number.isFinite(value)) setLatest("weight", record, value, unit);
-      if (type.includes("RestingHeartRate") && Number.isFinite(value)) setLatest("rhr", record, value, unit);
-      if (type.includes("HeartRateVariabilitySDNN") && Number.isFinite(value)) setLatest("hrv", record, value, unit);
-      if (type.includes("VO2Max") && Number.isFinite(value)) setLatest("vo2", record, value, unit);
+    while (offset < file.size) {
+      const text = await file.slice(offset, offset + CHUNK).text();
+      offset += CHUNK;
+      const data = tail + text;
+      let processable;
+      if (offset >= file.size) {
+        processable = data;
+        tail = "";
+      } else {
+        const boundary = data.lastIndexOf("/>");
+        if (boundary === -1) {
+          tail = data.length > TAIL_MAX ? data.slice(-TAIL_MAX) : data;
+          continue;
+        }
+        processable = data.slice(0, boundary + 2);
+        tail = data.slice(boundary + 2);
+        if (tail.length > TAIL_MAX) tail = tail.slice(-TAIL_MAX);
+      }
 
-      if (type.includes("StepCount") && Number.isFinite(value) && day) {
-        dailySteps.set(day, (dailySteps.get(day) || 0) + value);
+      const matches = processable.match(recordRe);
+      if (matches) {
+        sawAnyRecord = true;
+        for (const rec of matches) {
+          const type = attr(rec, "type");
+          const isWeight = type.includes("BodyMass") && !type.includes("BodyMassIndex");
+          const interesting =
+            isWeight ||
+            type.includes("RestingHeartRate") ||
+            type.includes("HeartRateVariabilitySDNN") ||
+            type.includes("VO2Max") ||
+            type.includes("StepCount") ||
+            type.includes("DistanceWalkingRunning") ||
+            type.includes("SleepAnalysis");
+          if (!interesting) continue;
+          records += 1;
+
+          const rawValue = attr(rec, "value");
+          const value = Number.parseFloat(rawValue);
+          const startRaw = attr(rec, "startDate");
+          const endRaw = attr(rec, "endDate") || startRaw;
+          const dayKey = startRaw.slice(0, 10);
+          const stamp = endRaw.slice(0, 19);
+
+          if (isWeight && Number.isFinite(value)) {
+            const unit = attr(rec, "unit");
+            const kg = unit === "lb" ? value * 0.453592 : value;
+            setLatest("weight", stamp, kg);
+            if (dayKey) dailyWeights[dayKey] = kg;
+          } else if (type.includes("RestingHeartRate") && Number.isFinite(value)) {
+            setLatest("rhr", stamp, value);
+          } else if (type.includes("HeartRateVariabilitySDNN") && Number.isFinite(value)) {
+            setLatest("hrv", stamp, value);
+          } else if (type.includes("VO2Max") && Number.isFinite(value)) {
+            setLatest("vo2", stamp, value);
+          } else if (type.includes("StepCount") && Number.isFinite(value) && dayKey) {
+            dailySteps.set(dayKey, (dailySteps.get(dayKey) || 0) + value);
+          } else if (type.includes("DistanceWalkingRunning") && Number.isFinite(value) && dayKey) {
+            const unit = attr(rec, "unit");
+            const km = unit === "mi" ? value * 1.60934 : unit === "m" ? value / 1000 : value;
+            dailyDistance.set(dayKey, (dailyDistance.get(dayKey) || 0) + km);
+          } else if (type.includes("SleepAnalysis") && rawValue && rawValue.includes("Asleep")) {
+            const start = parseAppleDate(startRaw);
+            const end = parseAppleDate(endRaw);
+            if (start && end && dayKey) {
+              dailySleep.set(dayKey, (dailySleep.get(dayKey) || 0) + Math.max(0, (end - start) / 60000));
+            }
+          }
+        }
       }
-      if (type.includes("DistanceWalkingRunning") && Number.isFinite(value) && day) {
-        const km = unit === "mi" ? value * 1.60934 : unit === "m" ? value / 1000 : value;
-        dailyDistance.set(day, (dailyDistance.get(day) || 0) + km);
-      }
-      if (type.includes("SleepAnalysis") && rawValue && rawValue.includes("Asleep") && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-        const minutes = Math.max(0, (end - start) / 60000);
-        dailySleep.set(day, (dailySleep.get(day) || 0) + minutes);
-      }
-    });
+
+      if (onProgress) onProgress(Math.min(99, Math.round((offset / file.size) * 100)));
+      // Laisse l'interface respirer entre deux tranches.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    if (!sawAnyRecord) {
+      throw new Error("Ce fichier ne contient aucun enregistrement Apple Santé. Vérifie que tu as bien choisi export.xml (pas export_cda.xml).");
+    }
+    if (!records) {
+      throw new Error("Fichier lu, mais aucune donnée exploitable (poids, sommeil, FC, HRV, pas). L'export semble vide pour ces catégories.");
+    }
 
     const latestFromMap = (map) => {
-      const days = [...map.keys()].sort();
-      const day = days[days.length - 1];
-      return day ? { day, value: map.get(day) } : null;
+      const keys = [...map.keys()].sort();
+      const key = keys[keys.length - 1];
+      return key ? { day: key, value: map.get(key) } : null;
     };
-
     const steps = latestFromMap(dailySteps);
     const distance = latestFromMap(dailyDistance);
     const sleep = latestFromMap(dailySleep);
 
     return {
       source: "Apple Santé",
-      fileName,
+      fileName: file.name,
       importedAt: new Date().toISOString(),
-      records: records.length,
-      weightKg: latest.weight?.value || null,
+      records,
+      weightKg: latest.weight ? Math.round(latest.weight.value * 10) / 10 : null,
       rhr: latest.rhr?.value || null,
       hrvMs: latest.hrv?.value || null,
       vo2: latest.vo2?.value || null,
       steps: steps?.value || null,
       distanceKm: distance?.value || null,
       sleepMinutes: sleep?.value || null,
+      dailyWeights,
       latestDates: {
         weight: latest.weight?.date || null,
         rhr: latest.rhr?.date || null,
@@ -2997,12 +3102,30 @@
         else if (key === todayId) [status, tone] = [day().workoutStarted ? "En cours" : "Aujourd'hui", "info"];
         else [status, tone] = ["Non renseignée", "watch"];
       }
+      const weekday = new Date(`${key}T12:00:00`).getDay();
+      const expanded = state.expandedProgramDay === weekday;
       rows.push(`
-        <article class="day-card">
+        <article class="day-card ${expanded ? "expanded" : ""}" data-action="toggle-program-day" data-day="${weekday}" role="button" tabindex="0" aria-expanded="${expanded}">
           <div class="day-label">${escapeHtml(label)}</div>
           <div><h3>${escapeHtml(session.title)}</h3><p>${escapeHtml(session.focus)}</p></div>
-          ${StatusBadge(status, tone)}
+          <div class="day-side">${StatusBadge(status, tone)}<span class="day-chevron">${expanded ? "▾" : "▸"}</span></div>
         </article>
+        ${
+          expanded
+            ? `<div class="day-detail">
+                ${
+                  session.exercises.length
+                    ? `<div class="exercise-list">
+                        ${session.exercises
+                          .map((item) => `<div class="exercise-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.detail)}</span></div>`)
+                          .join("")}
+                      </div>
+                      <p class="small-text">Progression : quand tu atteins le haut de la fourchette de reps sur toutes les séries au RPE cible → +2,5 kg (haut du corps) ou +5 kg (bas du corps) la séance suivante.</p>`
+                    : `<p class="small-text">Repos complet : marche libre si tu veux, rien d'imposé. La progression se construit pendant la récupération.</p>`
+                }
+              </div>`
+            : ""
+        }
       `);
     }
     return `
@@ -3014,6 +3137,7 @@
           </div>
           ${StatusBadge(programPhase()?.label || "Avant-bloc", "info")}
         </div>
+        <p class="small-text">Touche une séance pour voir le détail des exercices, séries, répétitions et temps de repos.</p>
         <div class="calendar">${rows.join("")}</div>
       </section>
     `;
@@ -4020,6 +4144,10 @@
     }
     if (action === "export-data") {
       exportBackup();
+    }
+    if (action === "toggle-program-day") {
+      const dayIndex = Number(actionButton.dataset.day);
+      state.expandedProgramDay = state.expandedProgramDay === dayIndex ? null : dayIndex;
     }
     if (action === "start-block-now") {
       state.program.startDate = mondayOfWeek();

@@ -801,18 +801,51 @@ body.light .donut::after {
   background: var(--surface-muted);
 }
 
+.exercise-row {
+  grid-template-columns: minmax(140px, auto) minmax(0, 1fr);
+}
+
 .exercise-row strong {
   min-width: 0;
-  overflow-wrap: anywhere;
   font-weight: 700;
   font-size: 0.92rem;
 }
 
 .exercise-row span {
+  min-width: 0;
   color: var(--muted);
   font-size: 0.82rem;
-  white-space: nowrap;
+  text-align: right;
+  line-height: 1.35;
   font-variant-numeric: tabular-nums;
+}
+
+.day-detail {
+  margin: -2px 0 6px;
+  padding: 4px 14px 12px;
+  border: 1px solid var(--line);
+  border-top: none;
+  border-radius: 0 0 18px 18px;
+  background: var(--surface);
+}
+
+.day-card {
+  cursor: pointer;
+}
+
+.day-card.expanded {
+  border-radius: 18px 18px 0 0;
+}
+
+.day-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.day-chevron {
+  color: var(--subtle);
+  font-size: 0.8rem;
 }
 
 /* ============ Boutons ============ */
@@ -1694,6 +1727,15 @@ body.light .mobile-nav {
 
   .message {
     max-width: 92%;
+  }
+
+  .exercise-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  .exercise-row span {
+    text-align: left;
   }
 
   .history-row {
