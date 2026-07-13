@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.0.0";
+  const APP_VERSION = "4.1.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -165,6 +165,10 @@
     uiVersion: 2,
     settingsOpen: false,
     journal: {},
+    program: {
+      blockId: "bloc-1",
+      startDate: "2026-07-20",
+    },
     workoutDraft: {
       mode: "muscu",
       exercises: [{ name: "", weight: "", reps: "", sets: "", rpe: "" }],
@@ -459,6 +463,7 @@
         journal,
         decisions: Array.isArray(saved.decisions) ? saved.decisions.slice(0, 40) : [],
         deload: { ...structuredClone(defaultState.deload), ...(saved.deload || {}) },
+        program: { ...structuredClone(defaultState.program), ...(saved.program || {}) },
         workoutDraft: {
           ...structuredClone(defaultState.workoutDraft),
           ...(saved.workoutDraft || {}),
@@ -959,6 +964,201 @@
     return liftHistories().size > 0 || runningSummary().total > 0;
   }
 
+  // ---- Bloc 1 : programme réel de l'athlète (validé le 13/07/2026, départ 20/07/2026) ----
+
+  const BLOC1 = {
+    id: "bloc-1",
+    name: "Bloc 1 — Recomposition & Base",
+    goal: "Maintenir le muscle en déficit léger, réduire le tour de taille et consolider la base aérobie, sans réveiller le mollet.",
+    totalWeeks: 10,
+    deloadWeek: 6,
+    phases: [
+      { from: 1, to: 2, label: "Prise de repères", weeklyGoal: "RPE 7 partout : calibrer les charges, filmer squat, couché et soulevé de terre." },
+      { from: 3, to: 5, label: "Accumulation", weeklyGoal: "RPE 8, double progression active. Lignes droites en fin de course 2 dès S4 si mollet muet." },
+      { from: 6, to: 6, label: "Deload planifié", weeklyGoal: "Volume -40 %, RPE ≤ 6, courses 30 min faciles. La surcompensation se joue cette semaine." },
+      { from: 7, to: 9, label: "Intensification", weeklyGoal: "Charges au plus haut, volume stable. Fractionné doux optionnel si zéro alerte mollet." },
+      { from: 10, to: 10, label: "Évaluation", weeklyGoal: "Top sets RPE 8 sur les 6 mouvements clés + 30 min de course à FC fixe. Les résultats calibrent le Bloc 2." },
+    ],
+    // getDay() : 0 = dimanche, 1 = lundi...
+    days: {
+      1: {
+        kind: "muscu",
+        title: "Bas A — Force",
+        focus: "Dominante squat · protocole mollet (debout)",
+        duration: 60,
+        rpe: "7 à 8",
+        exercises: [
+          { name: "Squat", detail: "4 × 4-6 · RPE 7-8 · repos 3 min" },
+          { name: "Presse ou fentes marchées", detail: "3 × 8-10 · RPE 7" },
+          { name: "Leg curl", detail: "3 × 8-12 · RPE 8" },
+          { name: "Mollets debout", detail: "3 × 10-12 · descente 3 s · protocole mollet" },
+          { name: "Gainage lesté", detail: "3 séries" },
+        ],
+      },
+      2: {
+        kind: "muscu",
+        title: "Haut A — Force",
+        focus: "Développé couché + tractions, bases de force",
+        duration: 60,
+        rpe: "7 à 8",
+        exercises: [
+          { name: "Développé couché", detail: "4 × 4-6 · RPE 7-8 · repos 3 min" },
+          { name: "Tractions (lestées si > 8)", detail: "4 × 5-8 · RPE 8" },
+          { name: "Développé militaire", detail: "3 × 6-8 · RPE 7,5" },
+          { name: "Rowing haltère unilatéral", detail: "3 × 8-10 · RPE 8" },
+          { name: "Face pull", detail: "3 × 12-15 · RPE 8" },
+        ],
+      },
+      3: {
+        kind: "course",
+        title: "Course 1 — Zone 2",
+        focus: "Base aérobie stricte : conversation possible du début à la fin",
+        duration: 45,
+        rpe: "Zone 2",
+        exercises: [
+          { name: "Échauffement", detail: "5 min marche rapide + 5 min trot très lent" },
+          { name: "Corps de séance", detail: "30-35 min zone 2, allure conversationnelle" },
+          { name: "Règle mollet", detail: "Douleur > 3/10 → stop, marche, et note-le au bilan du soir" },
+        ],
+      },
+      4: {
+        kind: "muscu",
+        title: "Bas B — Hinge & unilatéral",
+        focus: "Chaîne postérieure · protocole mollet (soléaire)",
+        duration: 60,
+        rpe: "7 à 8",
+        exercises: [
+          { name: "Soulevé de terre roumain", detail: "4 × 6-8 · RPE 7 · repos 3 min" },
+          { name: "Squat bulgare", detail: "3 × 8-10 / jambe · RPE 8" },
+          { name: "Hip thrust", detail: "3 × 8-12 · RPE 8" },
+          { name: "Mollets assis (soléaire)", detail: "3 × 12-15 · tempo contrôlé · protocole mollet" },
+          { name: "Gainage anti-rotation", detail: "3 séries (Pallof, portés)" },
+        ],
+      },
+      5: {
+        kind: "muscu",
+        title: "Haut B — Hypertrophie",
+        focus: "Volume épaules, dos, bras — RPE maîtrisé",
+        duration: 60,
+        rpe: "8",
+        exercises: [
+          { name: "Développé incliné haltères", detail: "4 × 8-10 · RPE 8" },
+          { name: "Tirage vertical prise neutre", detail: "3 × 8-12 · RPE 8" },
+          { name: "Élévations latérales", detail: "4 × 12-15 · RPE 8-9" },
+          { name: "Rowing câble assis", detail: "3 × 10-12 · RPE 8" },
+          { name: "Curl incliné + triceps corde", detail: "superset 3 × 10-12" },
+        ],
+      },
+      6: {
+        kind: "course",
+        title: "Course 2 — Zone 2 longue",
+        focus: "Volume aérobie · lignes droites en fin de séance dès S4 (si mollet OK)",
+        duration: 60,
+        rpe: "Zone 2",
+        exercises: [
+          { name: "Échauffement", detail: "5 min marche rapide + 5 min trot très lent" },
+          { name: "Corps de séance", detail: "40-50 min zone 2" },
+          { name: "Dès S4", detail: "6 lignes droites de 15-20 s à ~85 %, récup marche 45 s" },
+        ],
+      },
+      0: {
+        kind: "repos",
+        title: "Repos complet",
+        focus: "Marche libre, rien d'imposé — la progression se construit ici",
+        duration: 0,
+        rpe: "—",
+        exercises: [],
+      },
+    },
+  };
+
+  function programStartDate() {
+    return state.program?.startDate || null;
+  }
+
+  function programWeek(key = dateKey()) {
+    const start = programStartDate();
+    if (!start) return null;
+    const startDay = new Date(`${start}T12:00:00`);
+    const now = new Date(`${key}T12:00:00`);
+    const diff = Math.floor((now - startDay) / 86400000);
+    if (diff < 0) return 0; // bloc programmé, pas encore démarré
+    return Math.min(BLOC1.totalWeeks + 1, Math.floor(diff / 7) + 1);
+  }
+
+  function programActive() {
+    const week = programWeek();
+    return week !== null && week >= 1 && week <= BLOC1.totalWeeks;
+  }
+
+  function programUpcoming() {
+    return programWeek() === 0;
+  }
+
+  function daysUntilBlockStart() {
+    const start = programStartDate();
+    if (!start) return null;
+    const diff = Math.round((new Date(`${start}T12:00:00`) - new Date(`${dateKey()}T12:00:00`)) / 86400000);
+    return Math.max(0, diff);
+  }
+
+  function programPhase(week = programWeek()) {
+    if (!week || week < 1) return null;
+    return BLOC1.phases.find((phase) => week >= phase.from && week <= phase.to) || null;
+  }
+
+  function programSessionFor(key = dateKey()) {
+    const weekday = new Date(`${key}T12:00:00`).getDay();
+    return BLOC1.days[weekday] || null;
+  }
+
+  function formatFrDate(key) {
+    const date = new Date(`${key}T12:00:00`);
+    if (Number.isNaN(date.getTime())) return key;
+    return date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  }
+
+  function mondayOfWeek(key = dateKey()) {
+    const date = new Date(`${key}T12:00:00`);
+    const delta = (date.getDay() + 6) % 7;
+    date.setDate(date.getDate() - delta);
+    return dateKey(date);
+  }
+
+  function addDaysKey(key, days) {
+    const date = new Date(`${key}T12:00:00`);
+    date.setDate(date.getDate() + days);
+    return dateKey(date);
+  }
+
+  function programStats() {
+    const start = programStartDate();
+    if (!start || !programActive()) return { planned: 0, done: 0, completion: 0, totalPlanned: 60 };
+    let planned = 0;
+    let done = 0;
+    let cursor = start;
+    const today = dateKey();
+    while (cursor <= today) {
+      const session = programSessionFor(cursor);
+      if (session && session.kind !== "repos") {
+        planned += 1;
+        const entry = journalEntry(cursor);
+        const completion = entry?.evening?.touched ? entry.evening.completion : null;
+        if (completion === "complete" || completion === "adaptee") done += 1;
+        else if (completion === "partial") done += 0.5;
+        else if (!completion && (entry?.workouts || []).length) done += 1;
+      }
+      cursor = addDaysKey(cursor, 1);
+    }
+    const totalPlanned = BLOC1.totalWeeks * 6;
+    return {
+      planned,
+      done: Math.round(done * 2) / 2,
+      completion: totalPlanned ? Math.round((done / totalPlanned) * 100) : 0,
+      totalPlanned,
+    };
+  }
+
   function realProgressReply() {
     const lifts = liftStatsList();
     if (!lifts.length) return null;
@@ -1287,11 +1487,20 @@
   }
 
   function makeCoachDecision(readiness) {
+    const session = programActive() ? programSessionFor() : null;
+    const plannedTitle = session
+      ? session.title
+      : hasTrainingData()
+        ? demo.workout.type
+        : programUpcoming()
+          ? `Bloc 1 — départ ${formatFrDate(programStartDate())}`
+          : "Aucune séance planifiée";
+
     if (isDeloadActive()) {
       return {
         label: "Deload en cours",
         tone: "info",
-        planned: hasTrainingData() ? demo.workout.type : "Semaine allégée",
+        planned: plannedTitle,
         intensity: "RPE 6 maximum",
         adjustment: `Volume réduit de 40 %, aucune série à l'échec — ${deloadDaysLeft()} jour(s) restant(s)`,
         reason:
@@ -1303,12 +1512,44 @@
       };
     }
 
-    if (!hasTrainingData()) {
+    if (session && session.kind === "repos") {
+      return {
+        label: "Repos planifié",
+        tone: "info",
+        planned: session.title,
+        intensity: "Aucune",
+        adjustment: "Marche libre et mobilité si tu en as envie, rien d'imposé",
+        reason:
+          "Jour de repos prévu par le bloc. La progression se construit pendant la récupération : le respecter n'est pas une option, c'est le programme.",
+        confidence: readiness.confidence,
+        next24: "Sommeil prioritaire, marche libre, et check-in demain matin avant la séance.",
+        nutrition: "Protéines maintenues même sans entraînement.",
+        recovery: "Journée idéale pour prendre le tour de taille ou les photos mensuelles.",
+      };
+    }
+
+    if (session && !hasTrainingData() && !morning().completed && !hasImportedHealth()) {
+      return {
+        label: "À compléter",
+        tone: "watch",
+        planned: session.title,
+        intensity: session.rpe === "—" ? "Non définie" : `RPE ${session.rpe}`,
+        adjustment: "Complète le check-in du matin pour valider la séance",
+        reason:
+          `Le bloc prévoit « ${session.title} » aujourd'hui (${session.focus}). Il me manque ton ressenti du jour pour confirmer, adapter ou alléger.`,
+        confidence: "Faible",
+        next24: "Check-in (20 secondes), puis exécute la séance prévue si tout est vert.",
+        nutrition: "Glucides autour de la séance si elle est intense.",
+        recovery: "Le readiness s'affinera avec quelques jours d'historique.",
+      };
+    }
+
+    if (!hasTrainingData() && !session) {
       if (hasImportedHealth() && !morning().completed) {
         return {
           label: "Données importées",
           tone: "info",
-          planned: "Aucune séance planifiée",
+          planned: plannedTitle,
           intensity: "Non définie",
           adjustment: "Complète le check-in pour affiner la recommandation",
           reason:
@@ -1324,7 +1565,7 @@
         return {
           label: "À compléter",
           tone: "watch",
-          planned: "Aucune séance planifiée",
+          planned: plannedTitle,
           intensity: "Non définie",
           adjustment: "Complète le check-in du matin",
           reason:
@@ -1340,7 +1581,7 @@
         return {
           label: "Repos recommandé",
           tone: "bad",
-          planned: "Aucune séance planifiée",
+          planned: plannedTitle,
           intensity: "Très basse",
           adjustment: "Ne pas lancer de séance intense",
           reason:
@@ -1355,7 +1596,7 @@
       return {
         label: "Check-in enregistré",
         tone: "info",
-        planned: "Aucune séance planifiée",
+        planned: plannedTitle,
         intensity: "Non définie",
         adjustment: "Ajoute ton programme pour obtenir la séance du jour",
         reason:
@@ -1377,7 +1618,7 @@
       return {
         label: "Repos recommandé",
         tone: "bad",
-        planned: demo.workout.type,
+        planned: plannedTitle,
         intensity: "Tres basse",
         adjustment: "Annuler la séance intense et vérifier la douleur",
         reason:
@@ -1393,7 +1634,7 @@
       return {
         label: "Récupération active",
         tone: "watch",
-        planned: demo.workout.type,
+        planned: plannedTitle,
         intensity: "Basse",
         adjustment: "Remplacer par 30 à 40 min de zone 2 facile + mobilité",
         reason:
@@ -1409,7 +1650,7 @@
       return {
         label: "Séance adaptée",
         tone: "watch",
-        planned: demo.workout.type,
+        planned: plannedTitle,
         intensity: "Moderee",
         adjustment: "Retirer 30 % du volume, RPE cible 6,5 à 7",
         reason:
@@ -1424,8 +1665,8 @@
     return {
       label: "Séance maintenue",
       tone: "good",
-      planned: demo.workout.type,
-      intensity: "RPE 7 a 7,5",
+      planned: plannedTitle,
+      intensity: session && session.rpe !== "—" ? `RPE ${session.rpe}` : "RPE 7 a 7,5",
       adjustment: day().adaptationConfirmed
         ? "Adaptation confirmée : pas d’échec, repos +30 s sur les mouvements lourds"
         : "Progression prudente autorisée",
@@ -1569,7 +1810,87 @@
   }
 
   function WorkoutCard(decision) {
+    const session = programActive() ? programSessionFor() : null;
+
+    if (session) {
+      const week = programWeek();
+      const isDeloadWeek = week === BLOC1.deloadWeek;
+      return `
+        <section class="workout-card">
+          <div class="workout-head">
+            <div>
+              <p class="eyebrow">Séance du jour · ${escapeHtml(BLOC1.name)}</p>
+              <h2 class="workout-title">${escapeHtml(session.title)}</h2>
+              <p class="workout-subtitle">${escapeHtml(session.focus)}</p>
+            </div>
+            ${StatusBadge(day().workoutStarted ? "En cours" : session.kind === "repos" ? "Repos" : "Prévue", day().workoutStarted ? "info" : decision.tone)}
+          </div>
+          <div class="stat-grid">
+            <div class="stat-tile"><span>Semaine</span><strong>${week} / ${BLOC1.totalWeeks}</strong></div>
+            <div class="stat-tile"><span>Durée</span><strong>${session.duration ? `${session.duration} min` : "—"}</strong></div>
+            <div class="stat-tile"><span>RPE cible</span><strong>${escapeHtml(isDeloadWeek && session.kind !== "repos" ? "≤ 6 (deload)" : session.rpe)}</strong></div>
+            <div class="stat-tile"><span>Phase</span><strong>${escapeHtml(programPhase(week)?.label || "—")}</strong></div>
+          </div>
+          ${
+            session.exercises.length
+              ? `<div class="exercise-list">
+                  ${session.exercises
+                    .map((item) => `<div class="exercise-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.detail)}</span></div>`)
+                    .join("")}
+                </div>`
+              : ""
+          }
+          ${
+            isDeloadWeek && session.kind !== "repos"
+              ? `<div class="notice"><strong>Semaine de deload planifiée</strong><p>Volume réduit de 40 % (2 séries par exercice), RPE plafonné à 6, aucune série à l'échec. Courses : 30 min faciles.</p></div>`
+              : ""
+          }
+          ${
+            session.kind !== "repos"
+              ? `<div class="button-row">
+                  <button type="button" class="primary-button" data-action="start-workout">${icon("play")}Démarrer la séance</button>
+                  <button type="button" class="secondary-button" data-action="request-adaptation">${icon("tune")}Adapter la séance</button>
+                </div>`
+              : ""
+          }
+          ${
+            day().adaptationPending
+              ? `<div class="notice">
+                  <strong>Confirmation requise</strong>
+                  <p>Proposition : retirer une série d’assistance, ajouter 30 s de repos sur les mouvements lourds et garder 2 répétitions en réserve.</p>
+                  <div class="button-row">
+                    <button type="button" class="primary-button" data-action="confirm-adaptation">${icon("check")}Confirmer</button>
+                    <button type="button" class="secondary-button" data-action="cancel-adaptation">Garder le plan</button>
+                  </div>
+                </div>`
+              : ""
+          }
+        </section>
+      `;
+    }
+
     if (!hasTrainingData()) {
+      if (programUpcoming()) {
+        return `
+          <section class="workout-card">
+            <div class="workout-head">
+              <div>
+                <p class="eyebrow">Séance du jour</p>
+                <h2 class="workout-title">Bloc 1 programmé</h2>
+                <p class="workout-subtitle">${escapeHtml(BLOC1.goal)}</p>
+              </div>
+              ${StatusBadge(`J-${daysUntilBlockStart()}`, "info")}
+            </div>
+            <div class="empty-state">
+              <strong>Départ le ${escapeHtml(formatFrDate(programStartDate()))}</strong>
+              <p>4 séances de musculation (Upper/Lower), 2 courses zone 2 et 1 repos complet par semaine, deload en semaine ${BLOC1.deloadWeek}. D'ici là : check-ins quotidiens pour construire ta base de readiness, et repérage des charges si tu veux t'échauffer.</p>
+            </div>
+            <div class="button-row">
+              <button type="button" class="secondary-button" data-action="start-block-now">${icon("play")}Commencer dès cette semaine</button>
+            </div>
+          </section>
+        `;
+      }
       return `
         <section class="workout-card">
           <div class="workout-head">
@@ -2649,7 +2970,136 @@
     `;
   }
 
+  function RealWeeklyCalendar() {
+    const monday = mondayOfWeek();
+    const todayId = dateKey();
+    const rows = [];
+    for (let i = 0; i < 7; i++) {
+      const key = addDaysKey(monday, i);
+      const session = programSessionFor(key);
+      const label = new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", "");
+      let status = "Prévue";
+      let tone = "info";
+      if (session.kind === "repos") {
+        status = "Repos planifié";
+        tone = "info";
+      } else if (key > todayId) {
+        status = "Prévue";
+      } else {
+        const entry = journalEntry(key);
+        const completion = entry?.evening?.touched ? entry.evening.completion : null;
+        if (completion === "complete") [status, tone] = ["Réalisée", "good"];
+        else if (completion === "adaptee") [status, tone] = ["Réalisée adaptée", "good"];
+        else if (completion === "partial") [status, tone] = ["Partielle", "watch"];
+        else if (completion === "none") [status, tone] = ["Manquée", "bad"];
+        else if (completion === "rest") [status, tone] = ["Repos pris", "info"];
+        else if ((entry?.workouts || []).length) [status, tone] = ["Séance saisie", "good"];
+        else if (key === todayId) [status, tone] = [day().workoutStarted ? "En cours" : "Aujourd'hui", "info"];
+        else [status, tone] = ["Non renseignée", "watch"];
+      }
+      rows.push(`
+        <article class="day-card">
+          <div class="day-label">${escapeHtml(label)}</div>
+          <div><h3>${escapeHtml(session.title)}</h3><p>${escapeHtml(session.focus)}</p></div>
+          ${StatusBadge(status, tone)}
+        </article>
+      `);
+    }
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Calendrier hebdomadaire</p>
+            <h2>Semaine ${programActive() ? `${programWeek()} sur ${BLOC1.totalWeeks}` : "de préparation"}</h2>
+          </div>
+          ${StatusBadge(programPhase()?.label || "Avant-bloc", "info")}
+        </div>
+        <div class="calendar">${rows.join("")}</div>
+      </section>
+    `;
+  }
+
+  function renderRealProgram() {
+    const week = programWeek();
+    const phase = programPhase(week);
+    const stats = programStats();
+    const upcoming = programUpcoming();
+
+    const overview = `
+      <div class="section-grid">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">${escapeHtml(BLOC1.name)}</p>
+              <h2>${upcoming ? `Départ ${escapeHtml(formatFrDate(programStartDate()))}` : `Semaine ${week} sur ${BLOC1.totalWeeks}`}</h2>
+            </div>
+            ${upcoming ? StatusBadge(`J-${daysUntilBlockStart()}`, "info") : StatusBadge(`${stats.completion} % du bloc`, "info")}
+          </div>
+          <p class="small-text">${escapeHtml(BLOC1.goal)}</p>
+          <div class="stat-grid">
+            <div class="stat-tile"><span>Séances comptées</span><strong>${stats.done} / ${stats.planned || "0"}</strong></div>
+            <div class="stat-tile"><span>Total du bloc</span><strong>${stats.totalPlanned}</strong></div>
+            <div class="stat-tile"><span>Deload</span><strong>Semaine ${BLOC1.deloadWeek}</strong></div>
+            <div class="stat-tile"><span>Phase</span><strong>${escapeHtml(phase?.label || "Préparation")}</strong></div>
+          </div>
+          ${
+            phase
+              ? `<div class="notice"><strong>Objectif de la semaine</strong><p>${escapeHtml(phase.weeklyGoal)}</p></div>`
+              : `<div class="notice"><strong>D'ici le départ</strong><p>Check-ins quotidiens pour construire ta base de readiness, export CSV Hevy au coach pour calibrer les charges, tour de taille de référence à mesurer.</p></div>`
+          }
+          ${
+            upcoming
+              ? `<div class="button-row" style="margin-top:14px"><button type="button" class="secondary-button" data-action="start-block-now">${icon("play")}Commencer dès cette semaine</button></div>`
+              : ""
+          }
+        </section>
+        ${ProgressRing({
+          value: stats.completion,
+          label: upcoming ? "Bloc programmé" : `Semaine ${week} sur ${BLOC1.totalWeeks}`,
+          sublabel: upcoming ? `Départ ${formatFrDate(programStartDate())}` : "Complétion du bloc (séances conformes)",
+          accent: "var(--indigo)",
+        })}
+      </div>
+    `;
+
+    const decisionsTimeline = (state.decisions || []).slice(0, 5);
+    return `
+      <div class="page-grid">
+        ${overview}
+        <div class="section-grid">
+          ${RealWeeklyCalendar()}
+          ${AdherenceCard()}
+        </div>
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Historique des adaptations</p>
+              <h2>Modifications du bloc, justifiées et tracées</h2>
+            </div>
+            ${StatusBadge("Traçabilité", "info")}
+          </div>
+          <div class="adaptation-list">
+            ${
+              decisionsTimeline.length
+                ? decisionsTimeline
+                    .map((item) => {
+                      const label = formatDayLabel(item.date);
+                      return `<article class="timeline-item"><strong>${escapeHtml(label.date)} — ${escapeHtml(item.label)}</strong><p>${escapeHtml(item.reason)}. Résultat : ${escapeHtml(observedOutcome(item))}</p></article>`;
+                    })
+                    .join("")
+                : `<div class="empty-state"><strong>Aucune adaptation pour l'instant</strong><p>Chaque modification du bloc (adaptation confirmée, deload, changement de variante) sera enregistrée ici avec sa raison.</p></div>`
+            }
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
   function renderProgram() {
+    if (programStartDate() && !hasTrainingData()) {
+      return renderRealProgram();
+    }
+
     if (!hasTrainingData()) {
       return BlankDataPage({
         eyebrow: "Bloc d’entraînement",
@@ -3571,6 +4021,20 @@
     if (action === "export-data") {
       exportBackup();
     }
+    if (action === "start-block-now") {
+      state.program.startDate = mondayOfWeek();
+      logDecision(
+        "bloc",
+        "Bloc 1 démarré cette semaine",
+        "Départ avancé à la demande de l'athlète (initialement prévu le 20 juillet)",
+        "Décision de l'athlète",
+        "Eleve"
+      );
+      addCoachMessage(
+        "coach",
+        `Bloc 1 lancé : la semaine 1 court à partir du ${formatFrDate(state.program.startDate)}. Premières séances à RPE 7 : on calibre les charges, pas de record cette semaine.`
+      );
+    }
 
     persist();
     render();
@@ -3707,6 +4171,19 @@
       if (lower.includes("progression") || lower.includes("stagnation")) {
         const real = realProgressReply();
         if (real) return real;
+      }
+      if ((lower.includes("semaine") || lower.includes("bloc")) && programStartDate()) {
+        if (programUpcoming()) {
+          return `Bloc 1 programmé : départ le ${formatFrDate(programStartDate())} (J-${daysUntilBlockStart()}). D'ici là : check-ins quotidiens, tour de taille de référence, et envoie ton export Hevy au coach pour calibrer les charges de départ.`;
+        }
+        if (programActive()) {
+          const week = programWeek();
+          const stats = programStats();
+          const weekAdherence = adherenceStats(7);
+          return `Bloc 1, semaine ${week}/${BLOC1.totalWeeks} — phase « ${programPhase(week)?.label || ""} ». ${stats.done} séance(s) conforme(s) sur ${stats.planned} prévue(s) depuis le départ${
+            weekAdherence.pct !== null ? `, adhérence 7 jours ${weekAdherence.pct} %` : ""
+          }. Objectif de la semaine : ${programPhase(week)?.weeklyGoal || "exécution propre"}`;
+        }
       }
       if (lower.includes("semaine") || lower.includes("bloc") || lower.includes("progression") || lower.includes("stagnation")) {
         return "Je n’ai pas encore assez de données pour analyser un bloc, une progression ou une stagnation. Enregistre tes séances dans le journal ou importe ton historique.";
