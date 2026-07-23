@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.4.0";
+  const APP_VERSION = "4.4.1";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -164,11 +164,14 @@
     theme: "dark",
     uiVersion: 2,
     settingsOpen: false,
+    movePickerOpen: false,
     expandedProgramDay: null,
     journal: {},
     program: {
       blockId: "bloc-1",
       startDate: "2026-07-27",
+      // Déplacements de séances : { "YYYY-MM-DD": weekdayTemplate } — la date affiche la séance d'un autre jour type.
+      swaps: {},
     },
     workoutDraft: {
       mode: "muscu",
@@ -484,6 +487,7 @@
         imports: { ...defaultState.imports, ...(saved.imports || {}) },
         chat: Array.isArray(saved.chat) && saved.chat.length ? saved.chat : structuredClone(defaultState.chat),
         settingsOpen: false,
+        movePickerOpen: false,
         // Refonte visuelle : le sombre devient le thème par défaut, une seule fois.
         theme: saved.uiVersion >= 2 ? saved.theme || "dark" : "dark",
         uiVersion: 2,
@@ -1234,8 +1238,30 @@
     return BLOC1.phases.find((phase) => week >= phase.from && week <= phase.to) || null;
   }
 
+  function actualWeekday(key) {
+    return new Date(`${key}T12:00:00`).getDay();
+  }
+
+  function effectiveWeekday(key) {
+    const swap = state.program?.swaps?.[key];
+    return Number.isInteger(swap) ? swap : actualWeekday(key);
+  }
+
+  function weekHasSwaps(key = dateKey()) {
+    const monday = mondayOfWeek(key);
+    for (let i = 0; i < 7; i++) {
+      if (Number.isInteger(state.program?.swaps?.[addDaysKey(monday, i)])) return true;
+    }
+    return false;
+  }
+
+  function clearWeekSwaps(key = dateKey()) {
+    const monday = mondayOfWeek(key);
+    for (let i = 0; i < 7; i++) delete state.program?.swaps?.[addDaysKey(monday, i)];
+  }
+
   function programSessionFor(key = dateKey()) {
-    const weekday = new Date(`${key}T12:00:00`).getDay();
+    const weekday = effectiveWeekday(key);
 
     // Semaine d'amorce (23-26/07) : séances de calibration dédiées.
     if (inAmorce(key)) {
@@ -1971,6 +1997,38 @@
     `;
   }
 
+  function MoveSessionPicker() {
+    const todayKey = dateKey();
+    const restoreRow = weekHasSwaps()
+      ? `<div class="button-row"><button type="button" class="secondary-button" data-action="undo-move-session">Rétablir l'ordre initial de la semaine</button></div>`
+      : "";
+
+    if (!state.movePickerOpen) return restoreRow;
+
+    const monday = mondayOfWeek(todayKey);
+    const options = [];
+    for (let i = 0; i < 7; i++) {
+      const key = addDaysKey(monday, i);
+      if (key <= todayKey) continue; // on n'échange qu'avec un jour à venir de la semaine
+      const target = programSessionFor(key);
+      if (!target) continue;
+      const label = new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric" });
+      options.push(
+        `<button type="button" class="secondary-button" data-action="confirm-move-session" data-target-key="${key}">${escapeHtml(label)} · ${escapeHtml(target.title)}</button>`
+      );
+    }
+
+    return `
+      <div class="notice">
+        <strong>Déplacer la séance du jour</strong>
+        <p>Choisis le jour avec lequel l'échanger. Conseil coach : garde les courses après un jour Haut (jamais après un jour Bas), et évite deux jours à impact d'affilée pour le mollet.</p>
+        ${options.length ? `<div class="button-row">${options.join("")}</div>` : `<p class="small-text">Aucun jour disponible après aujourd'hui dans cette semaine.</p>`}
+        <div class="button-row"><button type="button" class="secondary-button" data-action="close-move-session">Annuler</button></div>
+      </div>
+      ${restoreRow}
+    `;
+  }
+
   function WorkoutCard(decision) {
     const session = programActive() ? programSessionFor() : null;
 
@@ -2013,10 +2071,15 @@
               ? `<div class="button-row">
                   <button type="button" class="primary-button" data-action="start-workout">${icon("play")}Démarrer la séance</button>
                   <button type="button" class="secondary-button" data-action="request-adaptation">${icon("tune")}Adapter la séance</button>
+                  <button type="button" class="secondary-button" data-action="open-move-session">Déplacer</button>
                   <a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a>
                 </div>`
-              : `<div class="button-row"><a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a></div>`
+              : `<div class="button-row">
+                  <button type="button" class="secondary-button" data-action="open-move-session">Déplacer</button>
+                  <a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a>
+                </div>`
           }
+          ${MoveSessionPicker()}
           ${
             day().adaptationPending
               ? `<div class="notice">
@@ -4143,6 +4206,50 @@
     }
     if (action === "request-adaptation") {
       day().adaptationPending = true;
+    }
+    if (action === "open-move-session") {
+      state.movePickerOpen = true;
+    }
+    if (action === "close-move-session") {
+      state.movePickerOpen = false;
+    }
+    if (action === "confirm-move-session") {
+      const todayKey = dateKey();
+      const targetKey = actionButton.dataset.targetKey;
+      if (targetKey && targetKey !== todayKey) {
+        const before = programSessionFor(todayKey)?.title || "Séance";
+        const after = programSessionFor(targetKey)?.title || "Séance";
+        state.program.swaps = state.program.swaps || {};
+        const todayEff = effectiveWeekday(todayKey);
+        const targetEff = effectiveWeekday(targetKey);
+        state.program.swaps[todayKey] = targetEff;
+        state.program.swaps[targetKey] = todayEff;
+        if (state.program.swaps[todayKey] === actualWeekday(todayKey)) delete state.program.swaps[todayKey];
+        if (state.program.swaps[targetKey] === actualWeekday(targetKey)) delete state.program.swaps[targetKey];
+        state.movePickerOpen = false;
+        logDecision(
+          "deplacement",
+          `Séances échangées : « ${before} » ↔ « ${after} »`,
+          `Déplacement demandé par l'athlète : la séance du ${formatFrDate(todayKey)} et celle du ${formatFrDate(targetKey)} sont échangées. La structure de la semaine reste identique, seul l'ordre change.`,
+          "Contrainte d'agenda signalée par l'athlète",
+          "—"
+        );
+        addCoachMessage(
+          "coach",
+          `C'est noté : « ${after} » aujourd'hui, « ${before} » le ${formatFrDate(targetKey)}. Rappel : garde les courses après un jour Haut, et si les deux jours deviennent des jours à impact d'affilée, sois attentif au mollet (règle > 3/10 inchangée).`
+        );
+      }
+    }
+    if (action === "undo-move-session") {
+      clearWeekSwaps();
+      state.movePickerOpen = false;
+      logDecision(
+        "deplacement",
+        "Ordre initial de la semaine rétabli",
+        "Les déplacements de séances de la semaine en cours ont été annulés à la demande de l'athlète.",
+        "Demande de l'athlète",
+        "—"
+      );
     }
     if (action === "confirm-adaptation") {
       day().adaptationPending = false;
