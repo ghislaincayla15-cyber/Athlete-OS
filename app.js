@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.3.0";
+  const APP_VERSION = "4.4.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -168,7 +168,7 @@
     journal: {},
     program: {
       blockId: "bloc-1",
-      startDate: "2026-07-20",
+      startDate: "2026-07-27",
     },
     workoutDraft: {
       mode: "muscu",
@@ -465,7 +465,12 @@
         journal,
         decisions: Array.isArray(saved.decisions) ? saved.decisions.slice(0, 40) : [],
         deload: { ...structuredClone(defaultState.deload), ...(saved.deload || {}) },
-        program: { ...structuredClone(defaultState.program), ...(saved.program || {}) },
+        program: (() => {
+          const merged = { ...structuredClone(defaultState.program), ...(saved.program || {}) };
+          // Programme v2 (23/07/2026) : le départ réel de S1 est le lundi 27/07 — migration de l'ancienne date.
+          if (merged.startDate === "2026-07-20") merged.startDate = "2026-07-27";
+          return merged;
+        })(),
         workoutDraft: {
           ...structuredClone(defaultState.workoutDraft),
           ...(saved.workoutDraft || {}),
@@ -966,20 +971,22 @@
     return liftHistories().size > 0 || runningSummary().total > 0;
   }
 
-  // ---- Bloc 1 : programme réel de l'athlète (validé le 13/07/2026, départ 20/07/2026) ----
+  // ---- Bloc 1 : programme réel de l'athlète (v2 du 23/07/2026 — amorce 23-26/07, S1 le lundi 27/07) ----
 
   const BLOC1 = {
     id: "bloc-1",
     name: "Bloc 1 — Recomposition & Base",
-    goal: "Maintenir le muscle en déficit léger, réduire le tour de taille et consolider la base aérobie, sans réveiller le mollet.",
+    goal: "Maintenir le muscle en déficit léger, réduire le tour de taille, consolider la base aérobie et développer les qualités athlétiques (pliométrie par paliers) — sans réveiller le mollet.",
     totalWeeks: 10,
     deloadWeek: 6,
+    amorceStart: "2026-07-23",
+    guideUrl: "./guidebloc1.html",
     phases: [
-      { from: 1, to: 2, label: "Prise de repères", weeklyGoal: "RPE 7 partout : calibrer les charges, filmer squat, couché et soulevé de terre." },
-      { from: 3, to: 5, label: "Accumulation", weeklyGoal: "RPE 8, double progression active. Lignes droites en fin de course 2 dès S4 si mollet muet." },
-      { from: 6, to: 6, label: "Deload planifié", weeklyGoal: "Volume -40 %, RPE ≤ 6, courses 30 min faciles. La surcompensation se joue cette semaine." },
-      { from: 7, to: 9, label: "Intensification", weeklyGoal: "Charges au plus haut, volume stable. Fractionné doux optionnel si zéro alerte mollet." },
-      { from: 10, to: 10, label: "Évaluation", weeklyGoal: "Top sets RPE 8 sur les 6 mouvements clés + 30 min de course à FC fixe. Les résultats calibrent le Bloc 2." },
+      { from: 1, to: 2, label: "Prise de repères", weeklyGoal: "RPE 7 partout : calibrer les charges, filmer squat, couché et soulevé de terre. Pliométrie palier P0 en début de Haut A/B." },
+      { from: 3, to: 5, label: "Accumulation", weeklyGoal: "RPE 8, double progression active. Pliométrie palier P1 si tests mollet validés. Lignes droites en fin de course 2 dès S4 si mollet muet." },
+      { from: 6, to: 6, label: "Deload planifié", weeklyGoal: "Volume -40 %, RPE ≤ 6, courses 30 min faciles, pliométrie P0 réduite. La surcompensation se joue cette semaine." },
+      { from: 7, to: 9, label: "Intensification", weeklyGoal: "Charges au plus haut, volume stable. Pliométrie palier P2. Fractionné doux optionnel si zéro alerte mollet." },
+      { from: 10, to: 10, label: "Évaluation", weeklyGoal: "Top sets RPE 8 sur les 6 mouvements clés + 30 min de course à FC fixe + test saut vertical et sprint. Les résultats calibrent le Bloc 2." },
     ],
     // getDay() : 0 = dimanche, 1 = lundi...
     days: {
@@ -1003,11 +1010,12 @@
       2: {
         kind: "muscu",
         title: "Haut A — Force",
-        focus: "Développé couché + tractions, bases de force",
-        duration: 60,
+        focus: "Pliométrie en début de séance, puis développé couché + tractions",
+        duration: 70,
         durationExtended: 80,
         deloadDuration: 40,
         rpe: "7 à 8",
+        plyo: true,
         exercises: [
           { name: "Développé couché", detail: "4 × 4-6 · RPE 7-8 · repos 3 min" },
           { name: "Tractions (lestées si > 8)", detail: "4 × 5-8 · RPE 8 · repos 2-3 min" },
@@ -1016,28 +1024,17 @@
           { name: "Face pull", detail: "3 × 12-15 · RPE 8 · repos 60 s" },
         ],
         extraExercise: { name: "Curl biceps barre EZ", detail: "3 × 10-12 · RPE 8 · repos 75 s · dès S3" },
-        athleticCircuit: {
-          light: [
-            { name: "Lancers de médecine-ball (rotation)", detail: "3 × 8 / côté · circuit qualités athlétiques (léger, sans impact) · S1-S2" },
-            { name: "Gainage anti-rotation dynamique (Pallof)", detail: "3 × 10 / côté · circuit qualités athlétiques (léger) · S1-S2" },
-            { name: "Mobilité hanches / chevilles", detail: "5 min en continu · circuit qualités athlétiques (léger) · S1-S2" },
-          ],
-          full: [
-            { name: "Bondissements latéraux (amplitude faible)", detail: "3 × 6 / côté · circuit qualités athlétiques · dès S3 · stop si douleur mollet > 3/10" },
-            { name: "Départs sprint arrêtés 10-15 m", detail: "4 répétitions, allure progressive (jamais au max) · circuit qualités athlétiques · dès S3 · stop si douleur mollet > 3/10" },
-            { name: "Lancers de médecine-ball (rotation)", detail: "3 × 8 / côté · circuit qualités athlétiques · dès S3" },
-          ],
-        },
       },
       3: {
         kind: "course",
         title: "Course 1 — Zone 2",
         focus: "Base aérobie stricte : conversation possible du début à la fin",
-        duration: 45,
+        duration: 40,
         rpe: "Zone 2",
         exercises: [
           { name: "Échauffement", detail: "5 min marche rapide + 5 min trot très lent" },
-          { name: "Corps de séance", detail: "30-35 min zone 2, allure conversationnelle" },
+          { name: "Corps de séance", detail: "35-40 min zone 2 en S1, puis 40-45 min, allure conversationnelle" },
+          { name: "Dès S7 (option)", detail: "Fractionné doux 6 × 2 min (récup 2 min trot) si zéro alerte mollet depuis le début du bloc" },
           { name: "Règle mollet", detail: "Douleur > 3/10 → stop, marche, et note-le au bilan du soir" },
         ],
       },
@@ -1061,11 +1058,12 @@
       5: {
         kind: "muscu",
         title: "Haut B — Hypertrophie",
-        focus: "Volume épaules, dos, bras — RPE maîtrisé",
-        duration: 60,
+        focus: "Pliométrie en début de séance, puis volume épaules, dos, bras",
+        duration: 70,
         durationExtended: 80,
         deloadDuration: 40,
         rpe: "8",
+        plyo: true,
         exercises: [
           { name: "Développé incliné haltères", detail: "4 × 8-10 · RPE 8 · repos 2 min" },
           { name: "Tirage vertical prise neutre", detail: "3 × 8-12 · RPE 8 · repos 90 s" },
@@ -1074,29 +1072,17 @@
           { name: "Curl incliné + triceps corde", detail: "superset 3 × 10-12 · repos 75 s" },
         ],
         extraExercise: { name: "Élévations Y (banc incliné)", detail: "3 × 12-15 · RPE 7-8 · repos 60 s · dès S3" },
-        athleticCircuit: {
-          light: [
-            { name: "Lancers de médecine-ball (rotation)", detail: "3 × 8 / côté · circuit qualités athlétiques (léger, sans impact) · S1-S2" },
-            { name: "Gainage anti-rotation dynamique (Pallof)", detail: "3 × 10 / côté · circuit qualités athlétiques (léger) · S1-S2" },
-            { name: "Mobilité hanches / chevilles", detail: "5 min en continu · circuit qualités athlétiques (léger) · S1-S2" },
-          ],
-          full: [
-            { name: "Bondissements latéraux (amplitude faible)", detail: "3 × 6 / côté · circuit qualités athlétiques · dès S3 · stop si douleur mollet > 3/10" },
-            { name: "Départs sprint arrêtés 10-15 m", detail: "4 répétitions, allure progressive (jamais au max) · circuit qualités athlétiques · dès S3 · stop si douleur mollet > 3/10" },
-            { name: "Lancers de médecine-ball (rotation)", detail: "3 × 8 / côté · circuit qualités athlétiques · dès S3" },
-          ],
-        },
       },
       6: {
         kind: "course",
         title: "Course 2 — Zone 2 longue",
         focus: "Volume aérobie · lignes droites en fin de séance dès S4 (si mollet OK)",
-        duration: 60,
+        duration: 50,
         rpe: "Zone 2",
         exercises: [
           { name: "Échauffement", detail: "5 min marche rapide + 5 min trot très lent" },
-          { name: "Corps de séance", detail: "40-50 min zone 2" },
-          { name: "Dès S4", detail: "6 lignes droites de 15-20 s à ~85 %, récup marche 45 s" },
+          { name: "Corps de séance", detail: "45-50 min zone 2 en S1, puis 50-60 min" },
+          { name: "Dès S4", detail: "6 lignes droites de 15-20 s à ~85 %, récup marche 45 s (si zéro alerte mollet)" },
         ],
       },
       0: {
@@ -1110,8 +1096,101 @@
     },
   };
 
+  // Pliométrie par paliers — mardi & vendredi, en DÉBUT de séance (travail nerveux : à faire frais).
+  // Volume compté en contacts au sol. Passage de palier : tests mollet du lundi validés + zéro alerte.
+  const PLYO = {
+    p0: [
+      { name: "Pliométrie · A-skip", detail: "3 × 10 m · palier P0 (~40 contacts) · rythme avant vitesse" },
+      { name: "Pliométrie · Ankle bounces (pogo)", detail: "3 × 10 · faible amplitude, contacts brefs et élastiques · palier P0" },
+      { name: "Pliométrie · Médecine-ball rotation", detail: "3 × 6 / côté · explosif, la puissance part des hanches · palier P0" },
+    ],
+    p1: [
+      { name: "Pliométrie · Sautillements unipodaux", detail: "3 × 8 / jambe · palier P1 (~50-60 contacts) · stop si douleur mollet > 3/10" },
+      { name: "Pliométrie · Bondissements latéraux", detail: "3 × 6 / côté · amplitude faible → moyenne · palier P1" },
+      { name: "Pliométrie · Départs sprint arrêtés", detail: "4 × 10-15 m à ~80 %, jamais au max · palier P1" },
+      { name: "Pliométrie · Médecine-ball rotation", detail: "2 × 6 / côté · palier P1" },
+    ],
+    p2: [
+      { name: "Pliométrie · Sauts de haies basses", detail: "3 × 5 · contact au sol minimal · palier P2 (~60-70 contacts)" },
+      { name: "Pliométrie · Bounding (bonds horizontaux)", detail: "3 × 8 contacts · poussée complète · palier P2" },
+      { name: "Pliométrie · Sprints 20 m", detail: "4 × à 85-90 % · récup marchée complète · palier P2" },
+      { name: "Pliométrie · Saut vertical (CMJ)", detail: "3 × 5 · référence de puissance, à noter dans l'app · palier P2" },
+    ],
+    deload: [
+      { name: "Pliométrie · A-skip", detail: "2 × 10 m · deload (~20 contacts)" },
+      { name: "Pliométrie · Ankle bounces (pogo)", detail: "2 × 10 · faible amplitude · deload" },
+    ],
+  };
+
+  // Micro-sessions quotidiennes flexibles : mobilité dynamique le matin (8-10 min, 7 j/7),
+  // étirements statiques le soir à distance des séances (lun/mer/sam 15 min, dim 20-25 min).
+  const MICRO = {
+    1: "Matin : mobilité 10 min · Soir : étirements 15 min",
+    2: "Matin : mobilité 10 min",
+    3: "Matin : mobilité 10 min · Soir : étirements 15 min",
+    4: "Matin : mobilité 10 min",
+    5: "Matin : mobilité 10 min",
+    6: "Matin : mobilité 10 min · Soir : étirements 15 min",
+    0: "Mobilité 10 min + étirements longs 20-25 min le soir",
+  };
+
+  const CALF_TESTS = {
+    name: "Tests mollet (avant séance, chaque lundi)",
+    detail: "25-30 élévations mollet unijambe + 15 sautillements unipodaux, sans douleur — pilotent les paliers pliométrie",
+  };
+
+  // Semaine d'amorce jeudi 23/07 → dimanche 26/07 : tests mollet, calibration, course de reprise.
+  const AMORCE_DAYS = {
+    4: {
+      kind: "muscu",
+      title: "Amorce — Bas A (calibration)",
+      focus: "Tests mollet puis charges prudentes à RPE 6-7 · filme ton squat",
+      duration: 60,
+      rpe: "6 à 7",
+    },
+    5: {
+      kind: "muscu",
+      title: "Amorce — Haut A (calibration)",
+      focus: "Pliométrie P0 en début de séance, puis Haut A à RPE 6-7",
+      duration: 70,
+      rpe: "6 à 7",
+    },
+    6: {
+      kind: "course",
+      title: "Amorce — Course Z2 reprise",
+      focus: "Reprise prudente post-kiné : zone 2 stricte, terrain plat",
+      duration: 35,
+      rpe: "Zone 2",
+      exercises: [
+        { name: "Échauffement", detail: "5 min marche rapide + 5 min trot très lent" },
+        { name: "Corps de séance", detail: "30-35 min zone 2, allure conversationnelle" },
+        { name: "Règle mollet", detail: "Douleur > 3/10 → stop, marche, et note-le au bilan du soir" },
+      ],
+    },
+    0: {
+      kind: "repos",
+      title: "Amorce — Repos",
+      focus: "Mobilité le matin, étirements longs le soir — S1 démarre demain",
+      duration: 0,
+      rpe: "—",
+      exercises: [],
+    },
+  };
+
   function programStartDate() {
     return state.program?.startDate || null;
+  }
+
+  function inAmorce(key = dateKey()) {
+    const start = programStartDate();
+    return Boolean(start && BLOC1.amorceStart && key >= BLOC1.amorceStart && key < start);
+  }
+
+  function plyoTierFor(week) {
+    if (week === BLOC1.deloadWeek) return PLYO.deload;
+    if (week >= 7) return PLYO.p2;
+    if (week >= 3) return PLYO.p1;
+    return PLYO.p0;
   }
 
   function programWeek(key = dateKey()) {
@@ -1126,11 +1205,12 @@
 
   function programActive() {
     const week = programWeek();
+    if (inAmorce()) return true;
     return week !== null && week >= 1 && week <= BLOC1.totalWeeks;
   }
 
   function programUpcoming() {
-    return programWeek() === 0;
+    return programWeek() === 0 && !inAmorce();
   }
 
   function daysUntilBlockStart() {
@@ -1141,27 +1221,49 @@
   }
 
   function programPhase(week = programWeek()) {
+    if (week === 0 && inAmorce()) {
+      return {
+        from: 0,
+        to: 0,
+        label: "Amorce",
+        weeklyGoal:
+          "Tests mollet de référence, calibration des charges à RPE 6-7, course de reprise 30-35 min. La S1 officielle démarre lundi 27/07.",
+      };
+    }
     if (!week || week < 1) return null;
     return BLOC1.phases.find((phase) => week >= phase.from && week <= phase.to) || null;
   }
 
   function programSessionFor(key = dateKey()) {
     const weekday = new Date(`${key}T12:00:00`).getDay();
+
+    // Semaine d'amorce (23-26/07) : séances de calibration dédiées.
+    if (inAmorce(key)) {
+      const amorce = AMORCE_DAYS[weekday];
+      if (amorce) {
+        if (amorce.kind !== "muscu") return { ...amorce, micro: MICRO[weekday] };
+        const source = weekday === 4 ? BLOC1.days[1] : BLOC1.days[2];
+        let exercises = [];
+        if (weekday === 4) exercises.push(CALF_TESTS);
+        if (weekday === 5) exercises = exercises.concat(PLYO.p0);
+        exercises = exercises.concat(source.exercises);
+        return { ...amorce, exercises, micro: MICRO[weekday] };
+      }
+    }
+
     const base = BLOC1.days[weekday];
     if (!base) return null;
-    if (base.kind !== "muscu") return base;
+    if (base.kind !== "muscu") return { ...base, micro: MICRO[weekday] };
 
     const week = programWeek(key);
     const isDeloadWeek = week === BLOC1.deloadWeek;
     const isPhasedUp = week !== null && week >= 3 && !isDeloadWeek;
-    const isCalibration = week !== null && week >= 1 && week <= 2;
 
-    let exercises = [...base.exercises];
+    let exercises = [];
+    if (weekday === 1) exercises.push(CALF_TESTS); // tests mollet chaque lundi, avant Bas A
+    if (base.plyo) exercises = exercises.concat(plyoTierFor(week)); // pliométrie en DÉBUT de Haut A/B
+    exercises = exercises.concat(base.exercises);
     if (isPhasedUp && base.extraExercise) exercises = exercises.concat(base.extraExercise);
-    if (base.athleticCircuit) {
-      if (isPhasedUp) exercises = exercises.concat(base.athleticCircuit.full);
-      else if (isCalibration) exercises = exercises.concat(base.athleticCircuit.light);
-    }
 
     const duration = isDeloadWeek
       ? base.deloadDuration ?? base.duration
@@ -1169,7 +1271,7 @@
         ? base.durationExtended ?? base.duration
         : base.duration;
 
-    return { ...base, exercises, duration };
+    return { ...base, exercises, duration, micro: MICRO[weekday] };
   }
 
   function formatFrDate(key) {
@@ -1886,7 +1988,7 @@
             ${StatusBadge(day().workoutStarted ? "En cours" : session.kind === "repos" ? "Repos" : "Prévue", day().workoutStarted ? "info" : decision.tone)}
           </div>
           <div class="stat-grid">
-            <div class="stat-tile"><span>Semaine</span><strong>${week} / ${BLOC1.totalWeeks}</strong></div>
+            <div class="stat-tile"><span>Semaine</span><strong>${week === 0 ? "Amorce" : `${week} / ${BLOC1.totalWeeks}`}</strong></div>
             <div class="stat-tile"><span>Durée</span><strong>${session.duration ? `${session.duration} min` : "—"}</strong></div>
             <div class="stat-tile"><span>RPE cible</span><strong>${escapeHtml(isDeloadWeek && session.kind !== "repos" ? "≤ 6 (deload)" : session.rpe)}</strong></div>
             <div class="stat-tile"><span>Phase</span><strong>${escapeHtml(programPhase(week)?.label || "—")}</strong></div>
@@ -1900,6 +2002,7 @@
                 </div>`
               : ""
           }
+          ${session.micro ? `<p class="small-text">Micro-sessions du jour · ${escapeHtml(session.micro)}</p>` : ""}
           ${
             isDeloadWeek && session.kind !== "repos"
               ? `<div class="notice"><strong>Semaine de deload planifiée</strong><p>Volume réduit de 40 % (2 séries par exercice), RPE plafonné à 6, aucune série à l'échec. Courses : 30 min faciles.</p></div>`
@@ -1910,8 +2013,9 @@
               ? `<div class="button-row">
                   <button type="button" class="primary-button" data-action="start-workout">${icon("play")}Démarrer la séance</button>
                   <button type="button" class="secondary-button" data-action="request-adaptation">${icon("tune")}Adapter la séance</button>
+                  <a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a>
                 </div>`
-              : ""
+              : `<div class="button-row"><a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a></div>`
           }
           ${
             day().adaptationPending
@@ -3178,8 +3282,10 @@
                           .map((item) => `<div class="exercise-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.detail)}</span></div>`)
                           .join("")}
                       </div>
-                      <p class="small-text">Progression : quand tu atteins le haut de la fourchette de reps sur toutes les séries au RPE cible → +2,5 kg (haut du corps) ou +5 kg (bas du corps) la séance suivante.</p>`
-                    : `<p class="small-text">Repos complet : marche libre si tu veux, rien d'imposé. La progression se construit pendant la récupération.</p>`
+                      <p class="small-text">Progression : quand tu atteins le haut de la fourchette de reps sur toutes les séries au RPE cible → +2,5 kg (haut du corps) ou +5 kg (bas du corps) la séance suivante.</p>
+                      ${session.micro ? `<p class="small-text">Micro-sessions · ${escapeHtml(session.micro)}</p>` : ""}`
+                    : `<p class="small-text">Repos complet : marche libre si tu veux, rien d'imposé. La progression se construit pendant la récupération.</p>
+                      ${session.micro ? `<p class="small-text">Micro-sessions · ${escapeHtml(session.micro)}</p>` : ""}`
                 }
               </div>`
             : ""
@@ -3191,7 +3297,7 @@
         <div class="card-head">
           <div>
             <p class="eyebrow">Calendrier hebdomadaire</p>
-            <h2>Semaine ${programActive() ? `${programWeek()} sur ${BLOC1.totalWeeks}` : "de préparation"}</h2>
+            <h2>Semaine ${programActive() ? (programWeek() === 0 ? "d'amorce (23-26/07)" : `${programWeek()} sur ${BLOC1.totalWeeks}`) : "de préparation"}</h2>
           </div>
           ${StatusBadge(programPhase()?.label || "Avant-bloc", "info")}
         </div>
@@ -3213,11 +3319,12 @@
           <div class="card-head">
             <div>
               <p class="eyebrow">${escapeHtml(BLOC1.name)}</p>
-              <h2>${upcoming ? `Départ ${escapeHtml(formatFrDate(programStartDate()))}` : `Semaine ${week} sur ${BLOC1.totalWeeks}`}</h2>
+              <h2>${upcoming ? `Départ ${escapeHtml(formatFrDate(programStartDate()))}` : week === 0 ? "Semaine d'amorce — S1 lundi 27/07" : `Semaine ${week} sur ${BLOC1.totalWeeks}`}</h2>
             </div>
             ${upcoming ? StatusBadge(`J-${daysUntilBlockStart()}`, "info") : StatusBadge(`${stats.completion} % du bloc`, "info")}
           </div>
           <p class="small-text">${escapeHtml(BLOC1.goal)}</p>
+          <p class="small-text"><a href="${BLOC1.guideUrl}" target="_blank" rel="noopener">Guide complet du bloc → chaque exercice expliqué, avec sa vidéo de démonstration</a></p>
           <div class="stat-grid">
             <div class="stat-tile"><span>Séances comptées</span><strong>${stats.done} / ${stats.planned || "0"}</strong></div>
             <div class="stat-tile"><span>Total du bloc</span><strong>${stats.totalPlanned}</strong></div>
@@ -3237,7 +3344,7 @@
         </section>
         ${ProgressRing({
           value: stats.completion,
-          label: upcoming ? "Bloc programmé" : `Semaine ${week} sur ${BLOC1.totalWeeks}`,
+          label: upcoming ? "Bloc programmé" : week === 0 ? "Semaine d'amorce" : `Semaine ${week} sur ${BLOC1.totalWeeks}`,
           sublabel: upcoming ? `Départ ${formatFrDate(programStartDate())}` : "Complétion du bloc (séances conformes)",
           accent: "var(--indigo)",
         })}
@@ -3877,7 +3984,7 @@
           </div>
           <button type="button" class="icon-button" data-action="close-settings" aria-label="Fermer">${icon("check")}</button>
         </div>
-        <p class="small-text"><strong>Athlete OS version ${APP_VERSION}</strong> · journal par date, coach à signaux multi-jours, saisie des séances, sauvegarde JSON, thème sombre premium.</p>
+        <p class="small-text"><strong>Athlete OS version ${APP_VERSION}</strong> · programme v2 (amorce + pliométrie par paliers + mobilité/étirements), journal par date, coach à signaux multi-jours, saisie des séances, sauvegarde JSON, thème sombre premium.</p>
         <p class="small-text">Les pondérations sont séparées dans le code pour pouvoir être ajustées sans changer les composants.</p>
         <div class="weight-list">
           ${readinessWeights
