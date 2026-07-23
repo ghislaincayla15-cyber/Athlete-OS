@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athlete OS — Guide complet Bloc 1</title>
+<style>
+  :root{--bg:#0e100b;--card:#171a13;--card2:#1e2218;--line:#2c3324;--volt:#C0F04A;--txt:#e8ecdf;--mut:#9aa38a;--warn:#f0a84a;}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.55;padding-bottom:60px;}
+  .wrap{max-width:860px;margin:0 auto;padding:0 16px;}
+  header{padding:28px 0 18px;border-bottom:1px solid var(--line);}
+  header h1{font-size:1.55rem;letter-spacing:.5px;}
+  header h1 span{color:var(--volt);}
+  header p{color:var(--mut);font-size:.9rem;margin-top:6px;}
+  nav{position:sticky;top:0;background:rgba(14,16,11,.96);backdrop-filter:blur(6px);z-index:10;border-bottom:1px solid var(--line);padding:10px 0;overflow-x:auto;white-space:nowrap;}
+  nav a{display:inline-block;color:var(--txt);text-decoration:none;font-size:.8rem;padding:6px 12px;border:1px solid var(--line);border-radius:999px;margin-right:6px;}
+  nav a:hover{border-color:var(--volt);color:var(--volt);}
+  h2{font-size:1.2rem;margin:34px 0 6px;color:var(--volt);scroll-margin-top:70px;}
+  h3{font-size:1.02rem;margin:22px 0 4px;scroll-margin-top:70px;}
+  h3 small{color:var(--mut);font-weight:400;}
+  .sub{color:var(--mut);font-size:.88rem;margin-bottom:12px;}
+  table{width:100%;border-collapse:collapse;font-size:.86rem;margin:10px 0 6px;}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top;}
+  th{background:var(--card2);color:var(--volt);font-weight:600;}
+  td b{color:var(--volt);font-weight:600;}
+  .ex{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin:10px 0;}
+  .ex-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:6px;}
+  .ex-head h4{font-size:.98rem;}
+  .rx{font-size:.78rem;color:#0e100b;background:var(--volt);border-radius:6px;padding:2px 8px;font-weight:600;}
+  .ex p{font-size:.86rem;margin:5px 0;}
+  .ex p b{color:var(--volt);}
+  .ex p.err b{color:var(--warn);}
+  .vid{display:inline-block;margin-top:7px;font-size:.82rem;color:var(--volt);text-decoration:none;border:1px solid var(--volt);border-radius:8px;padding:5px 11px;}
+  .vid:hover{background:var(--volt);color:#0e100b;}
+  .note{background:var(--card2);border-left:3px solid var(--volt);border-radius:0 10px 10px 0;padding:10px 14px;font-size:.87rem;margin:12px 0;}
+  .note.warn{border-left-color:var(--warn);}
+  .note b{color:var(--volt);}
+  .note.warn b{color:var(--warn);}
+  .tag{font-size:.72rem;color:var(--mut);border:1px solid var(--line);border-radius:5px;padding:1px 6px;margin-left:4px;}
+  footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);color:var(--mut);font-size:.78rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>ATHLETE <span>OS</span> — Guide complet Bloc 1</h1>
+  <p>Recomposition &amp; Base · 10 semaines · v2 du 23/07/2026 · Départ réel jeudi 23/07 — S1 officielle lundi 27/07. Tout le programme + chaque exercice expliqué avec sa vidéo de démonstration.</p>
+</header>
+
+<nav>
+  <a href="#semaine">Semaine type</a>
+  <a href="#amorce">Amorce 23-26/07</a>
+  <a href="#basA">Bas A</a>
+  <a href="#hautA">Haut A</a>
+  <a href="#basB">Bas B</a>
+  <a href="#hautB">Haut B</a>
+  <a href="#plyo">Pliométrie</a>
+  <a href="#mob">Mobilité</a>
+  <a href="#etir">Étirements</a>
+  <a href="#course">Courses &amp; mollet</a>
+  <a href="#deroule">10 semaines</a>
+</nav>
+
+<h2 id="semaine">📅 Ta semaine type (dès lundi 27/07)</h2>
+<table>
+  <tr><th>Jour</th><th>Séance principale</th><th>Micro-sessions</th></tr>
+  <tr><td><b>Lundi</b></td><td>Bas A — Force (60→70 min)</td><td>Matin : mobilité 10 min · Soir : étirements 15 min</td></tr>
+  <tr><td><b>Mardi</b></td><td>Pliométrie (début) + Haut A — Force (70→80 min)</td><td>Matin : mobilité 10 min</td></tr>
+  <tr><td><b>Mercredi</b></td><td>Course 1 — Zone 2 (35-40 min en S1)</td><td>Matin : mobilité · Soir : étirements 15 min</td></tr>
+  <tr><td><b>Jeudi</b></td><td>Bas B — Hinge &amp; unilatéral (60→70 min)</td><td>Matin : mobilité 10 min</td></tr>
+  <tr><td><b>Vendredi</b></td><td>Pliométrie (début) + Haut B — Hypertrophie (70→80 min)</td><td>Matin : mobilité 10 min</td></tr>
+  <tr><td><b>Samedi</b></td><td>Course 2 — Zone 2 longue (45-50 min en S1)</td><td>Soir : étirements 15 min</td></tr>
+  <tr><td><b>Dimanche</b></td><td>Repos complet</td><td>Mobilité + étirements longs 20-25 min</td></tr>
+</table>
+<div class="note"><b>Règle d'or de progression (double progression) :</b> chaque exercice a une fourchette de reps. Quand tu atteins le haut de la fourchette sur TOUTES les séries au RPE cible → +2,5 kg (haut du corps) ou +5 kg (bas du corps) la fois suivante. Jamais d'échec : garde toujours 1-2 reps en réserve.</div>
+
+<h2 id="amorce">🚀 Semaine d'amorce — jeudi 23/07 → dimanche 26/07</h2>
+<table>
+  <tr><th>Jour</th><th>Programme</th></tr>
+  <tr><td><b>Jeu 23 (aujourd'hui)</b></td><td><b>Tests mollet</b> (ci-dessous) puis <b>Bas A calibration</b> : les 5 exercices à RPE 6-7, charges prudentes, filme ton squat</td></tr>
+  <tr><td><b>Ven 24</b></td><td>Pliométrie P0 (10 min) + <b>Haut A calibration</b> à RPE 6-7</td></tr>
+  <tr><td><b>Sam 25</b></td><td>Course Z2 reprise : 30-35 min, terrain plat, échauffement complet</td></tr>
+  <tr><td><b>Dim 26</b></td><td>Repos · mobilité matin + étirements longs le soir</td></tr>
+</table>
+<div class="note warn"><b>⚠ Tests mollet de référence (à refaire chaque lundi)</b> — ils pilotent la progression pliométrique :<br>
+<b>Test 1 — force</b> : élévations mollet sur une jambe, amplitude complète. Objectif : 25-30 reps sans douleur par jambe.<br>
+<b>Test 2 — ressort</b> : 15 sautillements sur un pied, faible amplitude. Objectif : zéro douleur pendant, ni le lendemain matin.<br>
+Les deux réussis → progression normale des paliers. Un raté → on reste au palier P0 et on re-teste lundi prochain.</div>
+
+<h2 id="basA">🦵 Bas A — Force <small class="tag">Lundi</small></h2>
+<p class="sub">Dominante squat. Échauffement : 5 min cardio léger + montée progressive en charge sur le squat (2-3 séries légères).</p>
+
+<div class="ex"><div class="ex-head"><h4>1. Squat barre</h4><span class="rx">4 × 4-6 · RPE 7→8 · repos 3 min</span></div>
+<p><b>Exécution :</b> barre sur les trapèzes, pieds largeur épaules pointes légèrement ouvertes. Inspire, gaine, descends en poussant les genoux dans l'axe des orteils jusqu'à cuisses sous la parallèle (ou ta profondeur propre), remonte en poussant le sol.</p>
+<p class="err"><b>⚠ Erreurs :</b> talons qui décollent, genoux qui rentrent, dos qui s'arrondit en bas. Si la cheville limite ta profondeur, petites cales sous les talons.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=Dr41gZwfTfM" target="_blank">▶ Vidéo — Olymp'Fit (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>2. Presse à cuisses <small>ou fentes marchées</small></h4><span class="rx">3 × 8-10 · RPE 7 · repos 2 min</span></div>
+<p><b>Exécution :</b> pieds milieu du plateau largeur épaules, descends jusqu'à ~90° de genou sans décoller le bas du dos du dossier, pousse sans verrouiller brutalement les genoux.</p>
+<p class="err"><b>⚠ Erreurs :</b> amplitude trop courte, bas du dos qui s'enroule en bas, genoux qui rentrent.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=aFoU2J4dru8" target="_blank">▶ Vidéo presse — EspaceMusculation (FR)</a>
+<a class="vid" href="https://www.youtube.com/watch?v=L7iPmk1GThE" target="_blank">▶ Vidéo fentes — MaxiPerformance (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>3. Leg curl</h4><span class="rx">3 × 8-12 · RPE 8 · repos 90 s</span></div>
+<p><b>Exécution :</b> réglage machine pour que le genou soit aligné avec l'axe de rotation. Fléchis en contrôlant, serre en haut 1 s, redescends en 2-3 s sans laisser tomber la charge.</p>
+<p class="err"><b>⚠ Erreurs :</b> hanches qui décollent du banc, retour balistique.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=UHGYDxCQPoc" target="_blank">▶ Vidéo — TeamSuperPhysique (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>4. Mollets debout (genou tendu) ⚠</h4><span class="rx">3 × 10-12 · descente 3 s · repos 90 s</span></div>
+<p><b>Exécution :</b> pleine amplitude — étirement complet en bas (talon sous le niveau de l'appui), montée maximale sur pointes, <b>descente lente en 3 secondes</b>. C'est ton renforcement protecteur du gastrocnémien.</p>
+<p class="err"><b>⚠ Erreurs :</b> rebond en bas, amplitude partielle, aller trop lourd trop vite. Douleur &gt; 3/10 → stop et signale-le.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=p8mRMZY0fB0" target="_blank">▶ Vidéo — VP Coaching (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>5. Gainage lesté (planche ou roulette)</h4><span class="rx">3 séries · repos 60 s</span></div>
+<p><b>Exécution :</b> planche lestée 30-45 s (bassin rétroversé, fessiers serrés) ou roulette : à genoux, déroule vers l'avant en gardant le bassin verrouillé, reviens avec les abdos — pas avec les bras.</p>
+<p class="err"><b>⚠ Erreurs :</b> bas du dos qui creuse — c'est LE signal d'arrêt de la série.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=yJ2Or6zX3LM" target="_blank">▶ Vidéo roulette — Olymp'Fit (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>6. Extension lombaire au banc <small class="tag">dès S3</small></h4><span class="rx">3 × 12 · RPE 7 · repos 90 s</span></div>
+<p><b>Exécution :</b> banc à 45°, appui sur les cuisses (crête du bassin libre), descends dos neutre, remonte jusqu'à l'alignement tronc-jambes en serrant fessiers et ischios — pas d'hyperextension.</p>
+<p class="err"><b>⚠ Erreurs :</b> monter trop haut (cambrure excessive), arrondir volontairement le dos en bas.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=7bDZtdQUj5A" target="_blank">▶ Vidéo — TeamSuperPhysique (FR)</a></div>
+
+<h2 id="hautA">💪 Haut A — Force <small class="tag">Mardi</small></h2>
+<p class="sub">Commence par la <a href="#plyo" style="color:var(--volt)">pliométrie</a> (10-12 min) après 5 min d'échauffement, puis enchaîne :</p>
+
+<div class="ex"><div class="ex-head"><h4>1. Développé couché barre</h4><span class="rx">4 × 4-6 · RPE 7→8 · repos 3 min</span></div>
+<p><b>Exécution :</b> omoplates serrées et abaissées, léger arc lombaire, pieds ancrés. Descends la barre vers le bas des pectoraux, coudes à ~45-70° du buste, pousse en ligne légèrement oblique vers les yeux.</p>
+<p class="err"><b>⚠ Erreurs :</b> coudes évasés à 90°, fesses qui décollent, rebond sur la poitrine.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=feWp7jZopI8" target="_blank">▶ Vidéo — Olymp'Fit (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>2. Tractions <small>(lestées si &gt; 8 reps)</small></h4><span class="rx">4 × 5-8 · RPE 8 · repos 2-3 min</span></div>
+<p><b>Exécution :</b> départ bras tendus omoplates engagées, tire les coudes vers les hanches jusqu'au menton au-dessus de la barre, redescends en contrôlant jusqu'à l'extension complète.</p>
+<p class="err"><b>⚠ Erreurs :</b> demi-amplitude, balancement (kipping), épaules qui montent vers les oreilles.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=xxPt6sxC8xo" target="_blank">▶ Vidéo — Amplitude Realm (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>3. Développé militaire barre</h4><span class="rx">3 × 6-8 · RPE 7,5 · repos 2 min</span></div>
+<p><b>Exécution :</b> debout, fessiers et abdos serrés, barre au niveau des clavicules. Pousse verticalement en rentrant légèrement la tête puis en la repassant devant, verrouillage complet au-dessus du crâne.</p>
+<p class="err"><b>⚠ Erreurs :</b> cambrure lombaire excessive (pousser avec le dos), trajectoire vers l'avant.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=_JOHuViN9Mk" target="_blank">▶ Vidéo — All-Musculation (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>4. Rowing haltère unilatéral</h4><span class="rx">3 × 8-10 / bras · RPE 8 · repos 90 s</span></div>
+<p><b>Exécution :</b> main et genou opposés sur le banc, dos plat. Tire l'haltère vers la hanche (pas vers l'épaule), coude près du corps, serre l'omoplate en haut, descends en étirement complet.</p>
+<p class="err"><b>⚠ Erreurs :</b> rotation du buste pour tricher, tirer avec le biceps, dos rond.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=xJX8_oLf-Vo" target="_blank">▶ Vidéo — Antoine MH (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>5. Face pull</h4><span class="rx">3 × 12-15 · RPE 8 · repos 60 s</span></div>
+<p><b>Exécution :</b> poulie hauteur visage, corde tirée vers le front/les yeux en écartant les mains, coudes hauts, rotation externe finale (poings vers l'arrière). Santé d'épaule = exercice clé.</p>
+<p class="err"><b>⚠ Erreurs :</b> trop lourd (ça devient un rowing), coudes qui tombent.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=67PKTDSKWWM" target="_blank">▶ Vidéo — Guillaume Simon (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>6. Curl biceps barre EZ <small class="tag">dès S3</small></h4><span class="rx">3 × 10-12 · RPE 8 · repos 75 s</span></div>
+<p><b>Exécution :</b> coudes fixes le long du corps, monte la barre en contractant, descends en 2-3 s jusqu'à l'extension quasi complète.</p>
+<p class="err"><b>⚠ Erreurs :</b> élan du buste, coudes qui avancent en haut du mouvement.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=l0hojGc8ss4" target="_blank">▶ Vidéo — Toute la Musculation (FR)</a></div>
+
+<h2 id="basB">🦵 Bas B — Hinge &amp; unilatéral <small class="tag">Jeudi</small></h2>
+<p class="sub">Chaîne postérieure. Échauffement : 5 min cardio + montée progressive sur le SDT roumain.</p>
+
+<div class="ex"><div class="ex-head"><h4>1. Soulevé de terre roumain</h4><span class="rx">4 × 6-8 · RPE 7 · repos 3 min</span></div>
+<p><b>Exécution :</b> départ debout barre en main, genoux légèrement fléchis et FIXES. Pousse les hanches vers l'arrière, barre au ras des cuisses/tibias, descends jusqu'à l'étirement franc des ischios (mi-tibia environ), remonte en poussant les hanches vers l'avant.</p>
+<p class="err"><b>⚠ Erreurs :</b> dos qui s'arrondit, barre qui s'éloigne des jambes, plier les genoux (ça devient un soulevé classique).</p>
+<a class="vid" href="https://www.youtube.com/watch?v=QrgidWFKaYs" target="_blank">▶ Vidéo — Myprotein France (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>2. Squat bulgare</h4><span class="rx">3 × 8-10 / jambe · RPE 8 · repos 90 s</span></div>
+<p><b>Exécution :</b> pied arrière sur un banc, pied avant à ~60-70 cm. Descends verticalement, genou avant dans l'axe du pied, jusqu'à ce que le genou arrière frôle le sol. Haltères en mains quand le poids du corps devient facile.</p>
+<p class="err"><b>⚠ Erreurs :</b> pied avant trop près (genou qui file devant), buste qui s'effondre, pousser avec la jambe arrière.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=2C-uNgKwPLE" target="_blank">▶ Vidéo — ScottHermanFitness (EN)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>3. Hip thrust barre</h4><span class="rx">3 × 8-12 · RPE 8 · repos 2 min</span></div>
+<p><b>Exécution :</b> haut du dos sur le banc, barre sur les hanches (coussin), pieds à plat genoux à 90° en haut. Pousse par les talons jusqu'à l'alignement complet épaules-hanches-genoux, menton rentré, serre fort 1 s en haut.</p>
+<p class="err"><b>⚠ Erreurs :</b> hyperextension lombaire en haut (pousse avec les fessiers, pas le dos), amplitude coupée.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=IMPB5EMTcqI" target="_blank">▶ Vidéo — Myprotein France (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>4. Mollets assis (soléaire) ⚠</h4><span class="rx">3 × 12-15 · tempo contrôlé · repos 60 s</span></div>
+<p><b>Exécution :</b> genoux fléchis à 90° sous le boudin, pleine amplitude, montée complète et descente lente. Genou fléchi = c'est le soléaire qui travaille — LE muscle du coureur, ta priorité prévention.</p>
+<p class="err"><b>⚠ Erreurs :</b> rebonds rapides, amplitude partielle. Douleur &gt; 3/10 → stop.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=6O5hh1rBtx8" target="_blank">▶ Vidéo — Colossus Fitness (EN)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>5. Pallof press (anti-rotation)</h4><span class="rx">3 × 10 / côté · repos 60 s</span></div>
+<p><b>Exécution :</b> poulie hauteur poitrine, de profil, mains jointes au sternum. Tends les bras devant toi SANS laisser le buste tourner, tiens 2 s, reviens. La résistance essaie de te faire pivoter — tu résistes.</p>
+<p class="err"><b>⚠ Erreurs :</b> épaules qui tournent, se pencher, trop lourd.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=_2xWmYNnFS8" target="_blank">▶ Vidéo — Colossus Fitness (EN)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>6. Abduction de hanche <small class="tag">dès S3</small></h4><span class="rx">3 × 15 / jambe · RPE 7 · repos 60 s</span></div>
+<p><b>Exécution :</b> machine (buste légèrement penché en avant pour cibler le moyen fessier) ou élastique au-dessus des genoux. Écarte en contrôlant, tiens 1 s, reviens lentement. Stabilité du bassin = genoux protégés en course.</p>
+<p class="err"><b>⚠ Erreurs :</b> mouvement balistique, se pencher en arrière.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=OjI5OpV6IWA" target="_blank">▶ Vidéo — Colossus Fitness (EN)</a></div>
+
+<h2 id="hautB">💪 Haut B — Hypertrophie <small class="tag">Vendredi</small></h2>
+<p class="sub">Commence par la <a href="#plyo" style="color:var(--volt)">pliométrie</a> (10-12 min), puis :</p>
+
+<div class="ex"><div class="ex-head"><h4>1. Développé incliné haltères</h4><span class="rx">4 × 8-10 · RPE 8 · repos 2 min</span></div>
+<p><b>Exécution :</b> banc à 30°, omoplates serrées. Descends les haltères de part et d'autre de la poitrine haute, coudes à ~45°, pousse en rapprochant légèrement les haltères en haut sans les entrechoquer.</p>
+<p class="err"><b>⚠ Erreurs :</b> banc trop incliné (ça devient des épaules), amplitude coupée en bas.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=AQFvfZO3Rb4" target="_blank">▶ Vidéo — TeamSuperPhysique (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>2. Tirage vertical prise neutre</h4><span class="rx">3 × 8-12 · RPE 8 · repos 90 s</span></div>
+<p><b>Exécution :</b> poignées neutres (paumes face à face), buste légèrement incliné en arrière et fixe. Tire vers le haut des pectoraux en descendant les coudes, étirement complet en haut à chaque rep.</p>
+<p class="err"><b>⚠ Erreurs :</b> se balancer pour tirer, couper l'étirement du haut.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=kVB6SlEyjQM" target="_blank">▶ Vidéo — Physique Development (EN)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>3. Élévations latérales</h4><span class="rx">4 × 12-15 · RPE 8-9 · repos 60 s</span></div>
+<p><b>Exécution :</b> léger penché en avant, coudes à peine fléchis. Monte les haltères sur les côtés jusqu'à l'horizontale, comme si tu versais un verre d'eau, descends en 2 s.</p>
+<p class="err"><b>⚠ Erreurs :</b> élan des jambes, monter au-dessus de l'horizontale avec les trapèzes, trop lourd.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=q_DYeb_daeY" target="_blank">▶ Vidéo — Olymp'Fit (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>4. Rowing câble assis</h4><span class="rx">3 × 10-12 · RPE 8 · repos 90 s</span></div>
+<p><b>Exécution :</b> buste vertical et fixe, tire la poignée vers le nombril en serrant les omoplates, laisse revenir en étirement complet sans te faire emporter vers l'avant.</p>
+<p class="err"><b>⚠ Erreurs :</b> balancement avant-arrière du buste, épaules enroulées.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=w2Q7LbkhtLI" target="_blank">▶ Vidéo — Olymp'Fit (FR)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>5. Superset : curl incliné + extension triceps corde</h4><span class="rx">3 × 10-12 chaque · repos 75 s</span></div>
+<p><b>Curl incliné :</b> banc à 45-60°, bras pendants derrière le buste (étirement maximal du biceps), monte sans avancer les coudes. <b>Triceps corde :</b> coudes collés au buste, tends vers le bas en écartant la corde en fin de mouvement.</p>
+<p class="err"><b>⚠ Erreurs :</b> coudes qui avancent (curl), coudes qui s'écartent (triceps).</p>
+<a class="vid" href="https://www.youtube.com/watch?v=wBvTNeXcbxQ" target="_blank">▶ Vidéo curl — Enzo TV (FR)</a>
+<a class="vid" href="https://www.youtube.com/watch?v=n2FSCB4vRSA" target="_blank">▶ Vidéo triceps — Colossus (EN)</a></div>
+
+<div class="ex"><div class="ex-head"><h4>6. Élévations Y sur banc incliné <small class="tag">dès S3</small></h4><span class="rx">3 × 12-15 · RPE 7-8 · repos 60 s</span></div>
+<p><b>Exécution :</b> à plat ventre sur banc incliné, haltères légers, monte les bras en Y (pouces vers le ciel) en serrant le bas des trapèzes, redescends lentement. Santé d'épaule et posture.</p>
+<p class="err"><b>⚠ Erreurs :</b> trop lourd (c'est un exercice léger par nature), hausser les épaules.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=yR7cIRWw9ZY" target="_blank">▶ Vidéo — Live Lean TV (EN)</a></div>
+
+<h2 id="plyo">⚡ Pliométrie — mardi &amp; vendredi, en DÉBUT de séance</h2>
+<p class="sub">10-12 min après 5 min d'échauffement, AVANT les charges (travail nerveux = à faire frais). Volume compté en contacts au sol — c'est lui qui protège ton mollet. Sol : intention « ressort », contacts brefs, silencieux.</p>
+
+<h3>Palier P0 — sans/faible impact <small>(amorce + S1-S2 · ~40 contacts)</small></h3>
+<div class="ex"><div class="ex-head"><h4>A-skip</h4><span class="rx">3 × 10 m</span></div>
+<p><b>Exécution :</b> montée de genou dynamique avec petit skip sur l'appui opposé, pied qui griffe le sol sous le bassin, bras en opposition. Rythme &gt; vitesse.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=IBqY1eoDH8U" target="_blank">▶ Vidéo — Road To Speed (FR)</a></div>
+<div class="ex"><div class="ex-head"><h4>Ankle bounces (pogo)</h4><span class="rx">3 × 10</span></div>
+<p><b>Exécution :</b> jambes quasi tendues, rebonds de faible amplitude uniquement par les chevilles, contacts brefs et élastiques. Prépare le mollet à la course sans les autres contraintes.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=c2LBofIzUqs" target="_blank">▶ Vidéo — Live Lean TV (EN)</a></div>
+<div class="ex"><div class="ex-head"><h4>Lancer de médecine-ball en rotation</h4><span class="rx">3 × 6 / côté</span></div>
+<p><b>Exécution :</b> de profil face à un mur, pivote hanches puis buste et lance la balle explosivement contre le mur. La puissance part des hanches, pas des bras.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=NP2e1Szrj28" target="_blank">▶ Vidéo — Live Lean TV (EN)</a></div>
+
+<h3>Palier P1 — impact unilatéral progressif <small>(S3-S5 · ~50-60 contacts · si tests mollet validés)</small></h3>
+<div class="ex"><div class="ex-head"><h4>Sautillements unipodaux</h4><span class="rx">3 × 8 / jambe</span></div>
+<p><b>Exécution :</b> sur un pied, rebonds faible amplitude sur place puis en avançant, contact bref, genou souple.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=7WgzHOQGgYw" target="_blank">▶ Vidéo — Elevate Yourself (EN)</a></div>
+<div class="ex"><div class="ex-head"><h4>Bondissements latéraux</h4><span class="rx">3 × 6 / côté</span></div>
+<p><b>Exécution :</b> pousse latéralement d'une jambe, atterris stable sur l'autre (genou aligné, 1 s de stabilisation), amplitude faible puis moyenne au fil des semaines.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=niEGdFUQ6sY" target="_blank">▶ Vidéo — LPS Athletic (EN)</a></div>
+<div class="ex"><div class="ex-head"><h4>Départs sprint arrêtés</h4><span class="rx">4 × 10-15 m à ~80 %</span></div>
+<p><b>Exécution :</b> position fendue, penche-toi et pousse fort les premiers appuis, corps incliné vers l'avant. Allure progressive, JAMAIS au max.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=GzZjzBm-56k" target="_blank">▶ Vidéo — Simple Speed Coach (EN)</a></div>
+
+<h3>Palier P2 — pliométrie complète <small>(S7-S9 · ~60-70 contacts · si zéro alerte en P1)</small></h3>
+<div class="ex"><div class="ex-head"><h4>Sauts de haies basses</h4><span class="rx">3 × 5</span></div>
+<p><b>Exécution :</b> haies/steps bas, enchaîne les sauts avec un contact au sol minimal entre chaque, réception avant-pied.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=_x1kw2WVoR4" target="_blank">▶ Vidéo — Rehab My Patient (EN)</a></div>
+<div class="ex"><div class="ex-head"><h4>Bounding (bonds horizontaux)</h4><span class="rx">3 × 8 contacts</span></div>
+<p><b>Exécution :</b> foulées bondissantes exagérées, pousse complète de la jambe arrière, bras amples.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=eIjuMzIFREs" target="_blank">▶ Vidéo — Simple Speed Coach (EN)</a></div>
+<div class="ex"><div class="ex-head"><h4>Sprints 20 m</h4><span class="rx">4 × à 85-90 %</span></div>
+<p><b>Exécution :</b> départ arrêté, accélération progressive sur 20 m, récupération marchée complète entre les reps.</p></div>
+<div class="ex"><div class="ex-head"><h4>Saut vertical contremouvement (CMJ)</h4><span class="rx">3 × 5 — à noter dans l'app</span></div>
+<p><b>Exécution :</b> descente rapide en quart de squat, remonte immédiatement en sautant le plus haut possible, mains libres. C'est ta référence de puissance du bloc.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=Jb63W4LQ8Ak" target="_blank">▶ Vidéo — Strength-Forge (EN)</a></div>
+
+<div class="note warn"><b>⚠ Règles de passage des paliers :</b> palier suivant uniquement si tests mollet du lundi validés + zéro douleur &gt; 3/10 en séance + zéro douleur au réveil. Douleur pendant → on finit la séance sans pliométrie. Douleur au réveil → palier inférieur pendant 1 semaine. On ne saute jamais un palier. S6 (deload) : P0 réduit, ~20 contacts.</div>
+
+<h2 id="mob">🔄 Mobilité — tous les matins, 8-10 min</h2>
+<p class="sub">Format dynamique (jamais d'étirement statique long avant l'effort). Même trame chaque jour, 7 j/7 — y compris les jours de repos.</p>
+
+<div class="ex"><div class="ex-head"><h4>1. Cheville au mur (flexion dorsale)</h4><span class="rx">2 × 10 / côté</span></div>
+<p><b>Exécution :</b> pied à ~10 cm du mur, amène le genou vers le mur SANS décoller le talon. Recule le pied au fil des progrès. L'exercice n°1 pour ton mollet et ta profondeur de squat.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=NqgwyM9hXMI" target="_blank">▶ Vidéo — Victoria Park (EN)</a></div>
+<div class="ex"><div class="ex-head"><h4>2. 90/90 hanches dynamique</h4><span class="rx">2 × 8 / côté</span></div>
+<p><b>Exécution :</b> assis, une jambe à 90° devant, l'autre à 90° sur le côté. Bascule les deux genoux d'un côté à l'autre sans les mains, buste haut.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=t4Zz6-aG8Iw" target="_blank">▶ Vidéo — Jack Hanrahan (EN)</a></div>
+<div class="ex"><div class="ex-head"><h4>3. World's greatest stretch</h4><span class="rx">2 × 5 / côté</span></div>
+<p><b>Exécution :</b> grande fente, main opposée au sol, ouvre l'autre bras vers le ciel en tournant le buste, reviens. Hanches + thoracique en un seul mouvement.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=-CiWQ2IvY34" target="_blank">▶ Vidéo — Squat University (EN)</a></div>
+<div class="ex"><div class="ex-head"><h4>4. Cat-camel</h4><span class="rx">10 + 10</span></div>
+<p><b>Exécution :</b> à quatre pattes, alterne dos rond (expire) et dos creux (inspire), vertèbre par vertèbre, lentement.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=_-ySbWknYrg" target="_blank">▶ Vidéo — PÔMA (FR)</a></div>
+<div class="ex"><div class="ex-head"><h4>5. Balancés de jambes</h4><span class="rx">10 / direction / jambe</span></div>
+<p><b>Exécution :</b> appui sur un support, balance la jambe avant-arrière puis latéralement, amplitude qui augmente progressivement, buste stable.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=difYoBtZi2s" target="_blank">▶ Vidéo — PureGym (EN)</a></div>
+
+<h2 id="etir">🧘 Étirements statiques — le soir, à distance des séances</h2>
+<p class="sub">Lundi, mercredi, samedi : routine 15 min. Dimanche : séance longue 20-25 min (+ adducteurs, dorsaux, quadriceps + 2-3 min de respiration lente). 2 × 45 s par position, tension confortable, jamais de douleur. Pourquoi le soir : zéro interférence avec la force, c'est la régularité qui fait gagner de l'amplitude, et ça prépare au sommeil.</p>
+
+<div class="ex"><div class="ex-head"><h4>1. Fléchisseurs de hanche</h4><span class="rx">2 × 45 s / côté</span></div>
+<p><b>Exécution :</b> fente genou au sol, bassin rétroversé (serre la fesse arrière), avance légèrement le bassin — la tension se sent devant la hanche arrière.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=-YVnT4cUkFk" target="_blank">▶ Vidéo — Coach Gab (FR)</a></div>
+<div class="ex"><div class="ex-head"><h4>2. Ischio-jambiers</h4><span class="rx">2 × 45 s / côté</span></div>
+<p><b>Exécution :</b> talon sur un support, jambe tendue, penche le buste dos droit jusqu'à la tension derrière la cuisse.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=SBEuNNzWekU" target="_blank">▶ Vidéo — VP Coaching (FR)</a></div>
+<div class="ex"><div class="ex-head"><h4>3. Mollets (genou tendu + genou fléchi) ⚠</h4><span class="rx">2 × 45 s / version / côté</span></div>
+<p><b>Exécution :</b> face au mur, jambe arrière tendue talon au sol (gastrocnémien), puis même position genou légèrement fléchi (soléaire). EN DOUCEUR — c'est aussi de la rééducation, jamais de douleur.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=m68UxMCLv3U" target="_blank">▶ Vidéo — Training Thérapie (FR)</a></div>
+<div class="ex"><div class="ex-head"><h4>4. Fessiers (figure 4)</h4><span class="rx">2 × 45 s / côté</span></div>
+<p><b>Exécution :</b> allongé, cheville sur le genou opposé, attrape l'arrière de la cuisse et ramène vers toi.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=IpK5HR07ReM" target="_blank">▶ Vidéo — CCGI (FR)</a></div>
+<div class="ex"><div class="ex-head"><h4>5. Pectoraux (cadre de porte)</h4><span class="rx">2 × 45 s</span></div>
+<p><b>Exécution :</b> avant-bras sur le montant, coude à 90°, avance doucement le buste jusqu'à la tension dans la poitrine.</p>
+<a class="vid" href="https://www.youtube.com/watch?v=bZ-eaBPOGiM" target="_blank">▶ Vidéo — Wellen (EN)</a></div>
+
+<h2 id="course">🏃 Les 2 courses &amp; protocole mollet</h2>
+<table>
+  <tr><th>Séance</th><th>S1</th><th>Ensuite</th><th>Évolutions conditionnelles</th></tr>
+  <tr><td><b>Course 1 (mer)</b></td><td>35-40 min Z2</td><td>40-45 min Z2</td><td>Dès S7 : option fractionné doux 6 × 2 min (récup 2 min trot) si zéro alerte depuis le début</td></tr>
+  <tr><td><b>Course 2 (sam)</b></td><td>45-50 min Z2</td><td>50-60 min Z2</td><td>Dès S4 : + 6 lignes droites 15-20 s à ~85 % (récup marche 45 s) si zéro alerte</td></tr>
+</table>
+<div class="note">Zone 2 = tu peux parler en phrases complètes (FC indicative 180 − âge ± 5, à affiner avec tes zones Garmin). Échauffement systématique : 5 min marche rapide + 5 min trot très lent.</div>
+<div class="note warn"><b>⚠ Protocole mollet :</b> progression volume ≤ 10 %/semaine, jamais deux augmentations consécutives, jamais la même semaine qu'un passage de palier pliométrique. Douleur &gt; 3/10 pendant → stop, marche, signale-le au bilan du soir. Douleur au réveil → séance à impact suivante remplacée (vélo/marche) + palier pliométrique inférieur. Trois alertes dans le bloc → on repense tout ensemble.</div>
+
+<h2 id="deroule">🗓 Déroulé des 10 semaines</h2>
+<table>
+  <tr><th>Semaines</th><th>Dates</th><th>Phase</th><th>Intention</th></tr>
+  <tr><td><b>Amorce</b></td><td>23/07 → 26/07</td><td>Amorce</td><td>Tests mollet, calibration, course reprise, plyo P0</td></tr>
+  <tr><td><b>S1-S2</b></td><td>27/07 → 09/08</td><td>Repères</td><td>RPE 7, calibration, technique filmée, plyo P0</td></tr>
+  <tr><td><b>S3-S5</b></td><td>10/08 → 30/08</td><td>Accumulation</td><td>RPE 8, 6ᵉ exercice, plyo P1, lignes droites dès S4</td></tr>
+  <tr><td><b>S6</b></td><td>31/08 → 06/09</td><td><b>DELOAD</b></td><td>Volume −40 %, RPE ≤ 6, courses 30 min, séances 40 min</td></tr>
+  <tr><td><b>S7-S9</b></td><td>07/09 → 27/09</td><td>Intensification</td><td>Charges au plus haut, plyo P2, fractionné optionnel</td></tr>
+  <tr><td><b>S10</b></td><td>28/09 → 04/10</td><td>Évaluation</td><td>Top sets RPE 8, test course FC fixe, test CMJ + sprint → Bloc 2</td></tr>
+</table>
+<div class="note"><b>Nutrition :</b> déficit léger ~300-400 kcal · 3 repas protéinés/j (~150-165 g) · glucides autour des séances lourdes. Juge de paix : poids moyen 7 j (−0,25 à −0,5 kg/sem) + tour de taille mensuel + charges maintenues. <b>Dans l'app :</b> check-in matin, bilan soir, meilleure série par exercice, courses, tests mollet du lundi, douleur mollet 0-10 après chaque session à impact.</div>
+
+<footer>Athlete OS · Bloc 1 v2 du 23/07/2026 · Vidéos : liens YouTube externes (chaînes tierces). Fondements : consensus Delphi 2025 sur les étirements, protocoles de retour post-lésion mollet (E3 Rehab, Physio Network), littérature repos/hypertrophie (Schoenfeld et al.).</footer>
+
+</div>
+</body>
+</html>
