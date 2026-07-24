@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.2.0";
+  const APP_VERSION = "5.3.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -402,38 +402,6 @@
     ];
   }
 
-  function createDemoState(overrides = {}) {
-    return {
-      ...structuredClone(defaultState),
-      ...overrides,
-      dataMode: "demo",
-      settingsOpen: false,
-      journal: seedDemoJournal(),
-      decisions: seedDemoDecisions(),
-      chat: [
-        {
-          role: "coach",
-          text:
-            "Mode démo chargé. Ces données sont fictives (3 semaines d'historique simulé) et servent uniquement à prévisualiser l’interface complète.",
-        },
-      ],
-      sources: {
-        garmin: "connected",
-        hevy: "partial",
-        apple: "connected",
-        nutrition: "manual",
-        photos: "none",
-        garminSync: "old",
-        lab: "disconnected",
-        import: "error",
-      },
-      imports: {
-        health: null,
-        error: "",
-      },
-    };
-  }
-
   const app = document.getElementById("app");
   let state = loadState();
 
@@ -471,7 +439,7 @@
       return {
         ...structuredClone(defaultState),
         ...saved,
-        dataMode: saved.dataMode === "demo" ? "demo" : saved.dataMode || "blank",
+        dataMode: saved.dataMode === "demo" ? "blank" : saved.dataMode || "blank",
         journal,
         decisions: Array.isArray(saved.decisions) ? saved.decisions.slice(0, 40) : [],
         deload: { ...structuredClone(defaultState.deload), ...(saved.deload || {}) },
@@ -796,8 +764,9 @@
     `;
   }
 
+  // Le mode démo a été retiré (v5.3) : l'app ne montre que des données réelles.
   function hasTrainingData() {
-    return state.dataMode === "demo";
+    return false;
   }
 
   function hasImportedHealth() {
@@ -2775,7 +2744,6 @@
           </div>
           <div class="button-row">
             <button type="button" class="primary-button" data-action="toggle-settings">${icon("settings")}Sources & paramètres</button>
-            <button type="button" class="secondary-button" data-action="load-demo">${icon("play")}Voir la démo</button>
           </div>
         </section>
       `;
@@ -4724,7 +4692,6 @@
           </div>
           <div class="button-row">
             <button type="button" class="primary-button" data-action="toggle-settings">${icon("settings")}Préparer les sources</button>
-            <button type="button" class="secondary-button" data-action="load-demo">${icon("play")}Charger la démo</button>
           </div>
         </section>
         <section class="card">
@@ -5680,22 +5647,6 @@
             .join("")}
         </div>
         <div class="notice">
-          <strong>Données de l’application</strong>
-          <p>Mode actuel : ${state.dataMode === "demo" ? "démo fictive" : "zéro donnée réelle"}. Tu peux effacer toutes les saisies locales ou recharger l’exemple visuel.</p>
-          <div class="button-row">
-            <button type="button" class="secondary-button" data-action="reset-blank">${icon("check")}Repartir de zéro</button>
-            <button type="button" class="primary-button" data-action="load-demo">${icon("play")}Charger la démo</button>
-          </div>
-          ${
-            state.dataMode === "demo"
-              ? `<div class="button-row" style="margin-top:10px">
-                  <button type="button" class="secondary-button" data-action="simulate-fatigue">${icon("alert")}Simuler une semaine difficile</button>
-                </div>
-                <p class="small-text">Dégrade les 4 derniers jours du journal fictif (readiness, fatigue, douleurs, RPE) pour voir les signaux du coach et la proposition de deload.</p>`
-              : ""
-          }
-        </div>
-        <div class="notice">
           <strong>Sauvegarde de tes données</strong>
           <p>Tout est stocké localement dans ce navigateur (${Object.keys(state.journal).length} jour(s) de journal, ${state.decisions.length} décision(s)). Exporte régulièrement une sauvegarde : c'est ta seule protection si l'app ou les données Safari sont supprimées.</p>
           <div class="button-row">
@@ -5710,6 +5661,11 @@
         <div class="notice">
           <strong>Architecture prévue</strong>
           <p>Garmin, Hevy et Apple Santé sont modélisés comme sources. La V1 reste locale, avec états disponibles, partiels, anciens, absents, déconnectés et erreur de synchronisation.</p>
+        </div>
+        <div class="danger-zone">
+          <strong>Zone sensible</strong>
+          <p>Repartir de zéro efface définitivement ${Object.keys(state.journal).length} jour(s) de journal, ${state.decisions.length} décision(s), tes imports et tes mesures. C'est irréversible et il n'y a pas d'annulation : exporte une sauvegarde avant.</p>
+          <button type="button" class="danger-button" data-action="reset-blank">Repartir de zéro — tout effacer</button>
         </div>
       </aside>
     `;
@@ -5851,14 +5807,14 @@
       state.settingsOpen = !state.settingsOpen;
     }
     if (action === "reset-blank") {
-      if (window.confirm("Effacer toutes les données locales Athlete OS et repartir de zéro ?")) {
+      const days = Object.keys(state.journal).length;
+      if (
+        window.confirm(
+          `Effacer définitivement toutes tes données Athlete OS ?\n\n${days} jour(s) de journal, ${state.decisions.length} décision(s), imports Garmin et Apple Santé, poids et tour de taille.\n\nAucune annulation possible.`
+        )
+      ) {
         resetToBlank();
       }
-    }
-    if (action === "load-demo") {
-      const theme = state.theme;
-      const activeTab = state.activeTab;
-      state = createDemoState({ theme, activeTab });
     }
     if (action === "close-settings") {
       state.settingsOpen = false;
@@ -5977,37 +5933,6 @@
       const prompt = actionButton.dataset.prompt;
       addCoachMessage("user", prompt);
       addCoachMessage("coach", generateCoachReply(prompt));
-    }
-    if (action === "simulate-fatigue") {
-      for (let i = 0; i < 4; i++) {
-        const entry = day(keyOffset(i));
-        entry.readinessScore = clamp(Math.round((entry.readinessScore ?? 75) - 17), 30, 100);
-        entry.morning = {
-          ...entry.morning,
-          completed: true,
-          fatigue: i % 2 ? 5 : 4,
-          motivation: 2,
-          pain: i % 2 ? "moderee" : "legere",
-          sleepQuality: "mauvaise",
-          muscleQuality: "lourde",
-        };
-        entry.evening = {
-          ...entry.evening,
-          touched: true,
-          completion: i === 3 ? "partial" : entry.evening.completion === "rest" ? "rest" : "partial",
-          rpe: 9,
-          pain: i % 2 ? "moderee" : "aucune",
-          satisfaction: 2,
-        };
-      }
-      state.deload = { activeUntil: null, startedAt: null, declinedAt: null };
-      state.settingsOpen = false;
-      state.activeTab = "today";
-      state.activeTodayView = "summary";
-      addCoachMessage(
-        "coach",
-        "Semaine difficile simulée sur le journal fictif : regarde les signaux du bloc et la proposition de deload sur l'écran Aujourd'hui."
-      );
     }
     if (action === "draft-mode") {
       harvestDraft();
@@ -6338,9 +6263,17 @@
     }
     if (lower.includes("semaine") || lower.includes("bloc")) {
       const week = adherenceStats(7);
-      return `Bloc semaine ${demo.block.week}/${demo.block.totalWeeks}, completion ${demo.block.completion} %. Adhérence réelle 7 jours : ${
+      const blockWeek = programWeek();
+      const load = weekSessionLoad();
+      const where =
+        blockWeek === null
+          ? "Aucun bloc démarré."
+          : blockWeek === 0
+            ? `Phase d'amorce, la semaine 1 démarre le ${formatFrDate(programStartDate())}.`
+            : `Semaine ${blockWeek} sur ${BLOC1.totalWeeks} du bloc, deload prévu en semaine ${BLOC1.deloadWeek}.`;
+      return `${where} Séances de la semaine : ${load.planned ? `${load.done} sur ${load.planned}` : "aucune prévue à ce stade"}. Adhérence 7 jours : ${
         week.pct !== null ? `${week.pct} % (${week.denom} séance(s) évaluée(s))` : "aucun bilan complété"
-      }. Priorite : regularite, RPE stable et deload potentiel semaine ${demo.block.deloadWeek}.`;
+      }. Priorité : régularité, RPE stable, et le mollet qui reste silencieux.`;
     }
     return `${decision.label}. Je base la recommandation sur tes tendances personnelles, pas sur un indicateur isolé. Priorité : exécution propre, douleur surveillée, bilan du soir complété.`;
   }
