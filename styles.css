@@ -1776,3 +1776,60 @@ body.light .mobile-nav {
     -webkit-backdrop-filter: blur(18px);
   }
 }
+
+/* Auto-save (v4.5) : badge d'état de sauvegarde dans les formulaires. */
+.head-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.save-badge {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.save-badge.saving {
+  background: var(--surface-muted);
+  color: var(--muted);
+}
+
+.save-badge.saving::before {
+  background: var(--subtle);
+  animation: save-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes save-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save-badge.saving::before { animation: none; }
+}
+
+.card-head--save {
+  flex-wrap: wrap;
+}
+
+.card-head--save > div:first-child {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 620px) {
+  .card-head--save {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .card-head--save .head-badges {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+  }
+}

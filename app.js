@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.4.1";
+  const APP_VERSION = "4.5.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -159,6 +159,7 @@
 
   const defaultState = {
     dataMode: "blank",
+    lastSavedAt: null,
     activeTab: "today",
     activeTodayView: "summary",
     theme: "dark",
@@ -503,6 +504,96 @@
     } catch (error) {
       // Stockage plein ou indisponible : l'app continue en mémoire.
     }
+  }
+
+  // ---- Auto-save (v4.5) ----
+  // Avant : les champs texte n'étaient sauvegardés qu'au blur (événement "change").
+  // Une saisie en cours était perdue si l'app passait en arrière-plan ou était fermée.
+  // Désormais : sauvegarde debouncée à la frappe + vidage forcé quand l'app se cache.
+
+  let saveTimer = null;
+
+  function persistNow() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    state.lastSavedAt = new Date().toISOString();
+    persist();
+    refreshSaveBadges();
+  }
+
+  function persistSoon(delay = 600) {
+    if (saveTimer) clearTimeout(saveTimer);
+    setSaveBadgesPending();
+    saveTimer = setTimeout(persistNow, delay);
+  }
+
+  function saveBadgeLabel() {
+    const stamp = state.lastSavedAt ? new Date(state.lastSavedAt) : null;
+    if (!stamp || Number.isNaN(stamp.getTime())) return "Sauvegarde auto";
+    const hh = String(stamp.getHours()).padStart(2, "0");
+    const mm = String(stamp.getMinutes()).padStart(2, "0");
+    return `Enregistré à ${hh}:${mm}`;
+  }
+
+  function SaveBadge() {
+    return `<span class="badge good save-badge" data-save-badge>${escapeHtml(saveBadgeLabel())}</span>`;
+  }
+
+  function refreshSaveBadges() {
+    document.querySelectorAll("[data-save-badge]").forEach((el) => {
+      el.textContent = saveBadgeLabel();
+      el.classList.remove("saving");
+      el.classList.add("good");
+    });
+  }
+
+  function setSaveBadgesPending() {
+    document.querySelectorAll("[data-save-badge]").forEach((el) => {
+      el.textContent = "Enregistrement…";
+      el.classList.add("saving");
+      el.classList.remove("good");
+    });
+  }
+
+  // Récupère la valeur de TOUS les champs affichés (y compris celui qui a encore le focus)
+  // et sauvegarde immédiatement. Appelé quand l'app se cache / se ferme.
+  function flushInputs({ force = false } = {}) {
+    let changed = false;
+
+    document.querySelectorAll("[data-scope][data-key]").forEach((input) => {
+      const scope = input.dataset.scope;
+      const key = input.dataset.key;
+      const target = scopeTarget(scope);
+      if (!target) return;
+      let value = input.value;
+      if (input.type === "range" || input.type === "number") {
+        value = input.value === "" ? "" : Number(input.value);
+        if (value !== "" && !Number.isFinite(value)) value = "";
+      }
+      if (String(target[key] ?? "") === String(value ?? "")) return;
+      updateStateFromField(input);
+      changed = true;
+    });
+
+    document.querySelectorAll("[data-draft-ex]").forEach((input) => {
+      const exercise = state.workoutDraft.exercises[Number(input.dataset.draftEx)];
+      const field = input.dataset.field;
+      if (!exercise || exercise[field] === input.value) return;
+      exercise[field] = input.value;
+      changed = true;
+    });
+
+    document.querySelectorAll("[data-draft-course]").forEach((input) => {
+      const key = input.dataset.draftCourse;
+      if (state.workoutDraft.course[key] === input.value) return;
+      state.workoutDraft.course[key] = input.value;
+      changed = true;
+    });
+
+    if (changed || force) persistNow();
+    return changed;
   }
 
   function hasTrainingData() {
@@ -2186,12 +2277,12 @@
   function MorningCheckIn() {
     return `
       <section class="form-panel">
-        <div class="card-head">
+        <div class="card-head card-head--save">
           <div>
             <p class="eyebrow">Check-in du matin</p>
             <h2>Moins de 20 secondes</h2>
           </div>
-          ${StatusBadge(morning().completed ? "Complete" : "A completer", morning().completed ? "good" : "watch")}
+          <div class="head-badges">${StatusBadge(morning().completed ? "Complete" : "A completer", morning().completed ? "good" : "watch")}${SaveBadge()}</div>
         </div>
         <div class="form-grid">
           <div class="field">
@@ -2230,12 +2321,12 @@
   function EveningReview() {
     return `
       <section class="form-panel">
-        <div class="card-head">
+        <div class="card-head card-head--save">
           <div>
             <p class="eyebrow">Bilan du soir</p>
             <h2>Ce qui a vraiment été réalisé</h2>
           </div>
-          ${StatusBadge(labelFor("completion", evening().completion), "info")}
+          <div class="head-badges">${StatusBadge(labelFor("completion", evening().completion), "info")}${SaveBadge()}</div>
         </div>
         <div class="form-grid">
           <div class="field full">
@@ -2276,12 +2367,12 @@
   function NutritionSummary() {
     return `
       <section class="form-panel">
-        <div class="card-head">
+        <div class="card-head card-head--save">
           <div>
             <p class="eyebrow">Alimentation simplifiée</p>
             <h2>Qualitative, sans calories inventées</h2>
           </div>
-          ${StatusBadge("Manuelle", "watch")}
+          <div class="head-badges">${StatusBadge("Manuelle", "watch")}${SaveBadge()}</div>
         </div>
         <div class="form-grid">
           <div class="field">
@@ -2781,12 +2872,12 @@
 
     return `
       <section class="form-panel">
-        <div class="card-head">
+        <div class="card-head card-head--save">
           <div>
             <p class="eyebrow">Journal des séances</p>
             <h2>Enregistrer ce que tu as fait</h2>
           </div>
-          ${StatusBadge("Saisie manuelle", "info")}
+          <div class="head-badges">${StatusBadge("Saisie manuelle", "info")}${SaveBadge()}</div>
         </div>
         <div class="field" style="margin-top:14px">${modeButtons}</div>
         <div style="margin-top:14px">${isMuscu ? muscuForm : courseForm}</div>
@@ -4047,7 +4138,7 @@
           </div>
           <button type="button" class="icon-button" data-action="close-settings" aria-label="Fermer">${icon("check")}</button>
         </div>
-        <p class="small-text"><strong>Athlete OS version ${APP_VERSION}</strong> · programme v2 (amorce + pliométrie par paliers + mobilité/étirements), journal par date, coach à signaux multi-jours, saisie des séances, sauvegarde JSON, thème sombre premium.</p>
+        <p class="small-text"><strong>Athlete OS version ${APP_VERSION}</strong> · programme v2 (amorce + pliométrie par paliers + mobilité/étirements), journal par date, coach à signaux multi-jours, saisie des séances, sauvegarde JSON, enregistrement automatique de la saisie, thème sombre premium.</p>
         <p class="small-text">Les pondérations sont séparées dans le code pour pouvoir être ajustées sans changer les composants.</p>
         <div class="weight-list">
           ${readinessWeights
@@ -4148,6 +4239,10 @@
   }
 
   function handleClick(event) {
+    // Sécurité : si un champ est encore en cours de saisie au moment du clic,
+    // on récupère sa valeur avant toute reconstruction du DOM.
+    flushInputs();
+
     const todayViewButton = event.target.closest("[data-today-view]");
     if (todayViewButton) {
       state.activeTodayView = todayViewButton.dataset.todayView;
@@ -4501,11 +4596,27 @@
 
   function handleInput(event) {
     const target = event.target;
+
+    // Journal des séances : la saisie brouillon est désormais sauvegardée à la frappe.
+    if (target.dataset.draftEx !== undefined || target.dataset.draftCourse !== undefined) {
+      harvestDraft();
+      persistSoon();
+      return;
+    }
+
     if (!target.dataset.scope || !target.dataset.key) return;
-    if (target.type !== "range") return;
+
+    if (target.type === "range") {
+      updateStateFromField(target);
+      persistNow();
+      render();
+      return;
+    }
+
+    // Champs texte / nombre / textarea : on enregistre sans re-rendre,
+    // sinon le DOM serait reconstruit sous les doigts et le focus perdu.
     updateStateFromField(target);
-    persist();
-    render();
+    persistSoon();
   }
 
   function handleChange(event) {
@@ -4520,8 +4631,11 @@
     }
     if (!target.dataset.scope || !target.dataset.key) return;
     updateStateFromField(target);
-    persist();
-    render();
+    persistNow();
+    // Un champ texte perd le focus quand on touche un autre bouton : re-rendre ici
+    // détacherait ce bouton du DOM avant que son clic ne soit traité (premier appui ignoré).
+    // La valeur est déjà enregistrée ; le rendu suivra au prochain clic.
+    if (target.type === "range" || target.tagName === "SELECT") render();
   }
 
   function markScopeTouched(scope) {
@@ -4647,6 +4761,15 @@
     }
     return `${decision.label}. Je base la recommandation sur tes tendances personnelles, pas sur un indicateur isolé. Priorité : exécution propre, douleur surveillée, bilan du soir complété.`;
   }
+
+  // Filet de sécurité iOS : l'app peut être balayée, verrouillée ou mise en arrière-plan
+  // pendant une saisie. On force alors l'enregistrement de ce qui est à l'écran.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushInputs({ force: true });
+  });
+  window.addEventListener("pagehide", () => flushInputs({ force: true }));
+  window.addEventListener("beforeunload", () => flushInputs({ force: true }));
+  window.addEventListener("blur", () => flushInputs());
 
   initPlatform();
   render();
