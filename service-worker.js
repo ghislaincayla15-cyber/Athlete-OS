@@ -1,4 +1,4 @@
-const CACHE_NAME = "athlete-os-cache-v17";
+const CACHE_NAME = "athlete-os-cache-v18";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const APP_SHELL = [
   "./app.js",
   "./guidebloc1.html",
   "./manifest.webmanifest",
+  "./version.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

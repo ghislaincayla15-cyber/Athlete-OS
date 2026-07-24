@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.3.0";
+  const APP_VERSION = "5.4.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -1635,6 +1635,58 @@
         // L'app reste pleinement utilisable sans service worker, notamment en fichier local.
       });
     }
+    checkForUpdate();
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") checkForUpdate();
+    });
+  }
+
+  // ---- Mise à jour (v5.4) ----
+  // Sur iPhone, une PWA peut servir une version en cache pendant des heures.
+  // On compare la version publiée à celle qui tourne, et on propose la mise à jour.
+
+  let pendingVersion = null;
+
+  async function checkForUpdate() {
+    if (location.protocol === "file:") return;
+    try {
+      const response = await fetch(`./version.json?cb=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.version && data.version !== APP_VERSION && data.version !== pendingVersion) {
+        pendingVersion = data.version;
+        render();
+      }
+    } catch (error) {
+      // Hors ligne : on garde la version installée, sans rien signaler.
+    }
+  }
+
+  async function applyUpdate() {
+    try {
+      if (window.caches) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+      const registrations = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+      await Promise.all(registrations.map((registration) => registration.update()));
+    } catch (error) {
+      // Même si le nettoyage échoue, le rechargement forcé récupère la nouvelle version.
+    }
+    location.reload();
+  }
+
+  function UpdateBanner() {
+    if (!pendingVersion) return "";
+    return `
+      <div class="update-banner">
+        <div>
+          <strong>Version ${escapeHtml(pendingVersion)} disponible</strong>
+          <span>Tu utilises la ${escapeHtml(APP_VERSION)}. La mise à jour ne touche pas à tes données.</span>
+        </div>
+        <button type="button" class="primary-button" data-action="apply-update">Mettre à jour</button>
+      </div>
+    `;
   }
 
   function updateDocumentChrome() {
@@ -5632,7 +5684,9 @@
           </div>
           <button type="button" class="icon-button" data-action="close-settings" aria-label="Fermer">${icon("check")}</button>
         </div>
-        <p class="small-text"><strong>Athlete OS version ${APP_VERSION}</strong> · programme v2 (amorce + pliométrie par paliers + mobilité/étirements), journal par date, coach à signaux multi-jours, saisie des séances, sauvegarde JSON, enregistrement automatique de la saisie, thème sombre premium.</p>
+        <p class="small-text"><strong>Athlete OS version ${APP_VERSION}</strong>${
+          pendingVersion ? ` · <button type="button" class="link-button" data-action="apply-update">version ${escapeHtml(pendingVersion)} disponible, mettre à jour</button>` : " · à jour"
+        } · programme v2 (amorce + pliométrie par paliers + mobilité/étirements), journal par date, coach à signaux multi-jours, saisie des séances, sauvegarde JSON, enregistrement automatique de la saisie, thème sombre premium.</p>
         <p class="small-text">Les pondérations sont séparées dans le code pour pouvoir être ajustées sans changer les composants.</p>
         <div class="weight-list">
           ${readinessWeights
@@ -5677,6 +5731,7 @@
     const page = pageCopy[state.activeTab] || pageCopy.today;
     app.innerHTML = `
       <div class="layout">
+        ${UpdateBanner()}
         ${renderSidebar()}
         <main class="main">
           <header class="topbar">
@@ -5775,6 +5830,10 @@
     if (!actionButton) return;
     const action = actionButton.dataset.action;
 
+    if (action === "apply-update") {
+      applyUpdate();
+      return;
+    }
     if (action === "set-completion") {
       const key = actionButton.dataset.key || dateKey();
       const value = actionButton.dataset.value;

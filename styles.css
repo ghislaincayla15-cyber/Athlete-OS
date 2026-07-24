@@ -2701,3 +2701,58 @@ body.light .ring {
 .danger-button:active {
   transform: scale(0.98);
 }
+
+/* ---- v5.4 : bandeau de mise à jour ---- */
+
+.update-banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: calc(10px + env(safe-area-inset-top));
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--green) 45%, var(--border));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--green) 14%, var(--surface));
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.update-banner div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.update-banner strong {
+  font-size: 0.9rem;
+}
+
+.update-banner span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.update-banner .primary-button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+}
+
+.link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--green);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
