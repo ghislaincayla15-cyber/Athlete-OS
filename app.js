@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.7.0";
+  const APP_VERSION = "4.8.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -116,6 +116,7 @@
 
   const dayDefaults = {
     weight: null,
+    waist: null, // tour de taille (cm), mesure hebdomadaire
     workouts: [],
     activities: [], // activités importées depuis Garmin (marches, courses, muscu)
     readinessScore: null,
@@ -636,6 +637,43 @@
     });
   }
 
+  // ---- Tour de taille : mesure hebdomadaire (v4.8) ----
+  // Croisé avec le poids, c'est ce qui distingue une perte de gras d'une perte de muscle.
+
+  function lastWaist(skipToday = false) {
+    const keys = Object.keys(state.journal)
+      .filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key))
+      .sort()
+      .reverse();
+    const today = dateKey();
+    for (const key of keys) {
+      if (skipToday && key === today) continue;
+      const value = Number(state.journal[key]?.waist);
+      if (Number.isFinite(value) && value > 0) return { key, value };
+    }
+    return null;
+  }
+
+  function waistDue() {
+    if (Number(day().waist) > 0) return false;
+    const last = lastWaist();
+    if (!last) return true; // aucune mesure de départ
+    const days = Math.round((new Date(`${dateKey()}T12:00:00`) - new Date(`${last.key}T12:00:00`)) / 86400000);
+    return days >= 7;
+  }
+
+  function waistTrendText() {
+    const previous = lastWaist(true);
+    const current = Number(day().waist) > 0 ? { key: dateKey(), value: Number(day().waist) } : lastWaist();
+    if (!current) return "Aucune mesure encore. La première sert de point de départ : nombril, debout, expiration normale, sans serrer.";
+    if (!previous || previous.key === current.key) {
+      return `Dernière mesure : ${String(current.value).replace(".", ",")} cm le ${formatShortDate(current.key)}. Il en faut une deuxième pour lire une tendance.`;
+    }
+    const delta = Math.round((current.value - previous.value) * 10) / 10;
+    const sign = delta > 0 ? "+" : "";
+    return `${String(current.value).replace(".", ",")} cm le ${formatShortDate(current.key)} · ${sign}${String(delta).replace(".", ",")} cm depuis le ${formatShortDate(previous.key)}.`;
+  }
+
   function missingItems() {
     const items = [];
     const session = programActive() ? programSessionFor() : null;
@@ -679,12 +717,13 @@
         tone: "watch",
       });
     }
-    if (!nutrition().touched && hour >= 17) {
+    if (waistDue()) {
+      const last = lastWaist();
       items.push({
-        label: "Alimentation du jour",
-        detail: "Repas, protéines, ressenti",
-        view: "evening",
-        focus: "meals",
+        label: "Tour de taille",
+        detail: last ? `Dernière mesure ${last.value} cm le ${formatShortDate(last.key)}` : "Mesure hebdomadaire, 10 secondes",
+        view: "checkin",
+        focus: "waist",
         tone: "info",
       });
     }
@@ -2479,6 +2518,11 @@
             <label for="weight">Poids du jour (kg, facultatif)</label>
             <input id="weight" type="number" inputmode="decimal" step="0.1" min="30" max="250" value="${day().weight ?? ""}" data-scope="day" data-key="weight" placeholder="Ex. 82,4" />
           </div>
+          <div class="field full">
+            <label for="waist">Tour de taille (cm, une fois par semaine)${waistDue() ? " · à mesurer" : ""}</label>
+            <input id="waist" type="number" inputmode="decimal" step="0.5" min="40" max="200" value="${day().waist ?? ""}" data-scope="day" data-key="waist" placeholder="Ex. 92" />
+            <p class="small-text">${escapeHtml(waistTrendText())}</p>
+          </div>
         </div>
       </section>
     `;
@@ -2524,58 +2568,6 @@
           <div class="field full">
             <label for="comment">Commentaire facultatif</label>
             <textarea id="comment" data-scope="evening" data-key="comment">${escapeHtml(evening().comment)}</textarea>
-          </div>
-        </div>
-      </section>
-    `;
-  }
-
-  function NutritionSummary() {
-    return `
-      <section class="form-panel">
-        <div class="card-head card-head--save">
-          <div>
-            <p class="eyebrow">Alimentation simplifiée</p>
-            <h2>Qualitative, sans calories inventées</h2>
-          </div>
-          <div class="head-badges">${StatusBadge("Manuelle", "watch")}${SaveBadge()}</div>
-        </div>
-        <div class="form-grid">
-          <div class="field">
-            <label for="meals">Repas consommés</label>
-            <input id="meals" type="number" min="0" max="8" value="${nutrition().meals}" data-scope="nutrition" data-key="meals" />
-          </div>
-          <div class="field">
-            <label for="proteinMeals">Repas protéinés</label>
-            <input id="proteinMeals" type="number" min="0" max="8" value="${nutrition().proteinMeals}" data-scope="nutrition" data-key="proteinMeals" />
-          </div>
-          <div class="field full">
-            <span class="label">Fruits et legumes</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "plants" }, nutrition().plants, ["aucun", "un", "deux", "trois"])}</div>
-          </div>
-          <div class="field full">
-            <span class="label">Alimentation generale</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "diet" }, nutrition().diet, ["maitrisee", "correcte", "irreguliere", "eloignee"])}</div>
-          </div>
-          <div class="field full">
-            <span class="label">Faim</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "hunger" }, nutrition().hunger, ["faible", "normal", "eleve", "tres"])}</div>
-          </div>
-          <div class="field full">
-            <span class="label">Énergie dans la journée</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "dayEnergy" }, nutrition().dayEnergy, ["faible", "moyen", "bon"])}</div>
-          </div>
-          <div class="field full">
-            <span class="label">Qualité digestive</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "digestion" }, nutrition().digestion, ["bonne", "moyenne", "mauvaise"])}</div>
-          </div>
-          <div class="field full">
-            <span class="label">Alcool</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "alcohol" }, nutrition().alcohol, ["aucun", "modere", "important"])}</div>
-          </div>
-          <div class="field full">
-            <label for="foods">Principaux aliments</label>
-            <textarea id="foods" data-scope="nutrition" data-key="foods">${escapeHtml(nutrition().foods)}</textarea>
           </div>
         </div>
       </section>
@@ -2629,11 +2621,6 @@
         name: "Apple Santé",
         status: state.sources.apple,
         copy: "Poids, pas, fréquence cardiaque et centralisation future.",
-      },
-      {
-        name: "Nutrition",
-        status: state.sources.nutrition,
-        copy: "Saisie qualitative volontaire. Aucune calorie précise n’est estimée sans données suffisantes.",
       },
       {
         name: "Photos",
@@ -3764,7 +3751,6 @@
       evening: `
         <div class="section-grid">
           ${EveningReview()}
-          ${NutritionSummary()}
         </div>
       `,
       history: `
@@ -5275,8 +5261,18 @@
       if (real) return `${real}${overload}`;
       return `Progression positive sur développé couché, tractions et rowing. Le développé militaire est stable sur trois séances : je propose variation de reps, tempo et RPE maîtrisé avant d’ajouter du volume.${overload}`;
     }
-    if (lower.includes("alimentation")) {
-      return `Nutrition : ${nutrition().proteinMeals}/${nutrition().meals} repas protéinés, faim ${labelFor("hunger", nutrition().hunger).toLowerCase()}, énergie ${labelFor("dayEnergy", nutrition().dayEnergy).toLowerCase()}. Pas d’estimation calorique précise avec ces données.`;
+    if (lower.includes("alimentation") || lower.includes("taille") || lower.includes("gras")) {
+      // Plus de journal alimentaire : la lecture se fait sur poids + tour de taille.
+      const weight = weightSummary();
+      const trendWeight =
+        weight.avg7 === null
+          ? "Aucun poids saisi ces 7 derniers jours."
+          : `Poids moyen 7 jours : ${formatKg(weight.avg7)}${
+              weight.delta === null
+                ? ""
+                : ` (${weight.delta > 0 ? "+" : ""}${String(weight.delta).replace(".", ",")} kg vs semaine précédente)`
+            }.`;
+      return `Pas de journal alimentaire dans l'app : ce qui tranche entre perte de gras et perte de muscle, c'est le croisement poids / tour de taille. ${trendWeight} ${waistTrendText()} Repères à tenir sans compter : protéines à chaque repas, glucides autour des séances, et pas de restriction agressive pendant un bloc de force.`;
     }
     if (lower.includes("semaine") || lower.includes("bloc")) {
       const week = adherenceStats(7);
@@ -5285,6 +5281,28 @@
       }. Priorite : regularite, RPE stable et deload potentiel semaine ${demo.block.deloadWeek}.`;
     }
     return `${decision.label}. Je base la recommandation sur tes tendances personnelles, pas sur un indicateur isolé. Priorité : exécution propre, douleur surveillée, bilan du soir complété.`;
+  }
+
+  // ---- Ouverture sur le bon moment de la journée (v4.8) ----
+  // L'app n'atterrit plus systématiquement sur la Synthèse : au lancement, elle ouvre
+  // ce qu'il y a à faire maintenant. La navigation manuelle reprend la main ensuite.
+
+  function suggestedTodayView() {
+    const hour = new Date().getHours();
+    const session = programActive() ? programSessionFor() : null;
+    const hasSession = Boolean(session) && session.kind !== "repos";
+    const sessionLogged = (day().workouts || []).length > 0 || daySessions().length > 0;
+
+    if (!morning().completed && hour < 14) return "checkin";
+    if (hasSession && !sessionLogged && hour >= 10 && hour < 21) return "workout";
+    if (hour >= 17 && !evening().touched) return "evening";
+    return "summary";
+  }
+
+  function applyLaunchView() {
+    // Uniquement au démarrage : on ne veut pas déplacer l'athlète pendant qu'il navigue.
+    if (state.activeTab !== "today") return;
+    state.activeTodayView = suggestedTodayView();
   }
 
   // Filet de sécurité iOS : l'app peut être balayée, verrouillée ou mise en arrière-plan
@@ -5297,6 +5315,7 @@
   window.addEventListener("blur", () => flushInputs());
 
   initPlatform();
+  applyLaunchView();
   render();
   persist();
 })();
