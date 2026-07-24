@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.1.0";
+  const APP_VERSION = "5.2.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -2534,6 +2534,54 @@
     return missing;
   }
 
+  // ---- v5.2 : marquer une séance faite ou non, en un appui ----
+  // Le bilan du soir complet reste disponible ; ici on ne demande que le fait brut,
+  // parce qu'une séance non déclarée est une donnée perdue pour l'adhérence.
+
+  const QUICK_STATUSES = [
+    { value: "complete", label: "Faite", tone: "good" },
+    { value: "adaptee", label: "Adaptée", tone: "good" },
+    { value: "partial", label: "Partielle", tone: "watch" },
+    { value: "none", label: "Pas faite", tone: "bad" },
+  ];
+
+  function QuickStatusChips(key) {
+    const entry = key === dateKey() ? day() : journalEntry(key) || day(key);
+    const current = entry?.evening?.touched ? entry.evening.completion : null;
+    return `
+      <div class="quick-status">
+        ${QUICK_STATUSES.map(
+          (status) => `
+          <button type="button" class="quick-chip ${current === status.value ? `active ${status.tone}` : ""}" data-action="set-completion" data-key="${key}" data-value="${status.value}">
+            ${escapeHtml(status.label)}
+          </button>`
+        ).join("")}
+      </div>
+    `;
+  }
+
+  function QuickSessionCard() {
+    const session = programActive() ? programSessionFor() : null;
+    if (!session || session.kind === "repos") return "";
+    const answered = evening().touched && evening().completion !== "none" ? true : evening().touched;
+    return `
+      <section class="card quick-card">
+        <div class="card-head card-head--save">
+          <div>
+            <p class="eyebrow">Séance du jour</p>
+            <h2>${escapeHtml(session.title)}</h2>
+            <p class="small-text">${answered ? "Tu peux corriger d'un appui." : "Tu l'as faite ? Un appui suffit, le détail viendra au bilan du soir."}</p>
+          </div>
+          ${answered ? StatusBadge(labelFor("completion", evening().completion), evening().completion === "none" ? "bad" : "good") : StatusBadge("À déclarer", "watch")}
+        </div>
+        ${QuickStatusChips(dateKey())}
+        <div class="button-row" style="margin-top:12px">
+          <button type="button" class="secondary-button" data-goto="today:evening" data-goto-focus="rpe">Ajouter le RPE et le détail</button>
+        </div>
+      </section>
+    `;
+  }
+
   function MetricCard(metric) {
     const tone = metric.score >= 72 ? "good" : metric.score >= 56 ? "watch" : "bad";
     return `
@@ -4586,6 +4634,7 @@
         <div class="today-grid">
           <div class="page-grid">
             ${RingsRow(readiness)}
+            ${QuickSessionCard()}
             ${MissingCard()}
             ${GaugeGrid()}
             ${CoachDecisionCard(decision)}
@@ -4606,6 +4655,7 @@
       `,
       workout: `
         <div class="page-grid">
+          ${QuickSessionCard()}
           <div class="section-grid">
             ${WorkoutCard(decision)}
             ${CoachSummary(decision, readiness)}
@@ -4764,7 +4814,9 @@
     const range = `${formatShortDate(monday)} → ${formatShortDate(sunday)}`;
     if (!programActive()) return `Semaine du ${range}`;
     const week = programWeek();
-    return week === 0 ? `Semaine d'amorce · ${range}` : `Semaine ${week} sur ${BLOC1.totalWeeks} · ${range}`;
+    // Une semaine calendaire n'est pas une semaine de bloc : pendant l'amorce,
+    // le lundi au mercredi sont hors bloc, d'où le libellé neutre.
+    return week === 0 ? `Semaine du ${range}` : `Semaine ${week} du bloc · ${range}`;
   }
 
   function RealWeeklyCalendar() {
@@ -4820,6 +4872,14 @@
           <div class="day-side">${StatusBadge(status, tone)}<span class="day-chevron">${expanded ? "▾" : "▸"}</span></div>
         </article>
         ${
+          key <= todayId && session.kind !== "repos" && !journalEntry(key)?.evening?.touched
+            ? `<div class="day-quick">
+                <span class="day-quick-label">${key === todayId ? "Tu l'as faite ?" : `Et le ${escapeHtml(formatShortDate(key))} ?`}</span>
+                ${QuickStatusChips(key)}
+              </div>`
+            : ""
+        }
+        ${
           expanded
             ? `<div class="day-detail">
                 ${
@@ -4845,7 +4905,7 @@
             <h2>${escapeHtml(weekRangeLabel())}</h2>
             <p class="small-text">${
               programActive() && programWeek() === 0
-                ? `L'amorce court du ${escapeHtml(formatShortDate(BLOC1.amorceStart))} au ${escapeHtml(formatShortDate(addDaysKey(programStartDate(), -1)))} : les jours d'avant sont hors bloc.`
+                ? `Amorce du ${escapeHtml(formatShortDate(BLOC1.amorceStart))} au ${escapeHtml(formatShortDate(addDaysKey(programStartDate(), -1)))} — les jours d'avant sont hors bloc. La semaine 1 démarre le ${escapeHtml(formatShortDate(programStartDate()))}.`
                 : "Semaine du lundi au dimanche."
             }</p>
           </div>
@@ -4921,7 +4981,18 @@
           <div class="card-head card-head--save">
             <div>
               <p class="eyebrow">${escapeHtml(BLOC1.name)}</p>
-              <h2>${upcoming ? `Départ ${escapeHtml(formatFrDate(programStartDate()))}` : week === 0 ? "Semaine d'amorce — S1 lundi 27/07" : `Semaine ${week} sur ${BLOC1.totalWeeks}`}</h2>
+              <h2>${
+                upcoming
+                  ? `Départ ${escapeHtml(formatFrDate(programStartDate()))}`
+                  : week === 0
+                    ? `Semaine d'amorce · ${escapeHtml(formatFrDate(BLOC1.amorceStart))} → ${escapeHtml(formatFrDate(addDaysKey(programStartDate(), -1)))}`
+                    : `Semaine ${week} sur ${BLOC1.totalWeeks}`
+              }</h2>
+              ${
+                week === 0 && !upcoming
+                  ? `<p class="small-text">Phase de calibration. La semaine 1 du bloc démarre le ${escapeHtml(formatFrDate(programStartDate()))}.</p>`
+                  : ""
+              }
             </div>
             ${
               upcoming
@@ -5748,6 +5819,23 @@
     if (!actionButton) return;
     const action = actionButton.dataset.action;
 
+    if (action === "set-completion") {
+      const key = actionButton.dataset.key || dateKey();
+      const value = actionButton.dataset.value;
+      const entry = day(key);
+      entry.evening = { ...entry.evening, touched: true, completion: value };
+      const done = value === "complete" || value === "adaptee";
+      const label = labelFor("completion", value).toLowerCase();
+      addCoachMessage(
+        "coach",
+        key === dateKey()
+          ? done
+            ? `Séance du jour notée « ${label} ». Pense au RPE et à la douleur mollet dans le bilan du soir : c'est ce qui me permet d'ajuster la semaine prochaine.`
+            : `Séance du jour notée « ${label} ». Une séance manquée n'est pas un problème isolément — je regarde la tendance sur la semaine avant de proposer quoi que ce soit.`
+          : `Séance du ${formatFrDate(key)} notée « ${label} ». L'historique et l'adhérence sont à jour.`
+      );
+      logDecision("adherence", `Séance ${formatShortDate(key)} : ${label}`, "Déclaration rapide de l'athlète", "Saisie manuelle", "Eleve");
+    }
     if (action === "open-exercise") {
       state.openExercise = actionButton.dataset.exercise;
       state.openExerciseDetail = actionButton.dataset.exerciseDetail || "";

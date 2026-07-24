@@ -2581,3 +2581,75 @@ body.light .ring {
 @media (max-width: 380px) {
   .gauge-grid { grid-template-columns: 1fr; }
 }
+
+/* ---- v5.2 : déclaration rapide d'une séance ---- */
+
+.quick-status {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.quick-chip {
+  min-height: 46px;
+  padding: 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.quick-chip:active {
+  transform: scale(0.97);
+}
+
+.quick-chip.active {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.quick-chip.active.good {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 16%, var(--surface));
+  color: color-mix(in srgb, var(--green) 82%, var(--text));
+}
+
+.quick-chip.active.watch {
+  border-color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 16%, var(--surface));
+  color: color-mix(in srgb, var(--orange) 84%, var(--text));
+}
+
+.quick-chip.active.bad {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 16%, var(--surface));
+  color: color-mix(in srgb, var(--red) 84%, var(--text));
+}
+
+.day-quick {
+  margin: -4px 0 12px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  background: var(--surface-muted);
+}
+
+.day-quick-label {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.day-quick .quick-status {
+  margin-top: 10px;
+}
+
+@media (max-width: 420px) {
+  .quick-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
