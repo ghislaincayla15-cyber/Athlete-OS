@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.8.0";
+  const APP_VERSION = "4.9.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -1494,9 +1494,9 @@
     return Math.min(BLOC1.totalWeeks + 1, Math.floor(diff / 7) + 1);
   }
 
-  function programActive() {
-    const week = programWeek();
-    if (inAmorce()) return true;
+  function programActive(key = dateKey()) {
+    const week = programWeek(key);
+    if (inAmorce(key)) return true;
     return week !== null && week >= 1 && week <= BLOC1.totalWeeks;
   }
 
@@ -3376,6 +3376,22 @@
   function TodayWorkoutsList() {
     const workouts = day().workouts || [];
     if (!workouts.length) return "";
+
+    const liftRow = (exercise) => {
+      const weight = Number(exercise.weight);
+      const load = weight > 0 ? `${String(exercise.weight).replace(".", ",")} kg` : "Poids du corps";
+      return `
+        <div class="lift-row">
+          <span class="lift-name">${escapeHtml(exercise.name)}</span>
+          <span class="lift-metrics">
+            <span class="lift-chip">${escapeHtml(load)}</span>
+            <span class="lift-chip">${exercise.sets} × ${exercise.reps} reps</span>
+            ${exercise.rpe === "" || exercise.rpe === undefined ? "" : `<span class="lift-chip">RPE ${String(exercise.rpe).replace(".", ",")}</span>`}
+          </span>
+        </div>
+      `;
+    };
+
     return `
       <section class="card">
         <div class="card-head">
@@ -3385,20 +3401,46 @@
           </div>
           ${StatusBadge("Journal", "good")}
         </div>
-        <div class="exercise-list">
+        <div class="logged-list">
           ${workouts
             .map((workout) => {
-              const summary =
-                workout.type === "muscu"
-                  ? (workout.exercises || [])
-                      .map((exercise) => `${exercise.name} ${String(exercise.weight).replace(".", ",")} kg × ${exercise.reps} (${exercise.sets} séries, RPE ${String(exercise.rpe || "—").replace(".", ",")})`)
-                      .join(" · ")
-                  : `${String(workout.km).replace(".", ",")} km en ${workout.duration} min (${formatPace(Number(workout.duration) / Number(workout.km))}${workout.hr ? `, ${workout.hr} bpm` : ""}) — ${RUN_KINDS[workout.kind] || "Course"}`;
+              if (workout.type === "muscu") {
+                const exercises = workout.exercises || [];
+                const sets = exercises.reduce((total, exercise) => total + (Number(exercise.sets) || 0), 0);
+                return `
+                  <article class="logged-workout">
+                    <div class="logged-head">
+                      <div class="logged-title">
+                        <strong>Musculation</strong>
+                        <span>${exercises.length} exercice${exercises.length > 1 ? "s" : ""} · ${sets} série${sets > 1 ? "s" : ""}</span>
+                      </div>
+                      <button type="button" class="ghost-button" data-action="delete-workout" data-id="${escapeHtml(workout.id)}">Supprimer</button>
+                    </div>
+                    <div class="lift-table">${exercises.map(liftRow).join("")}</div>
+                  </article>
+                `;
+              }
+              const km = Number(workout.km);
+              const duration = Number(workout.duration);
               return `
-                <div class="exercise-row">
-                  <strong>${workout.type === "muscu" ? "Musculation" : "Course"} — ${escapeHtml(summary)}</strong>
-                  <button type="button" class="ghost-button" data-action="delete-workout" data-id="${escapeHtml(workout.id)}">Supprimer</button>
-                </div>
+                <article class="logged-workout">
+                  <div class="logged-head">
+                    <div class="logged-title">
+                      <strong>${escapeHtml(RUN_KINDS[workout.kind] || "Course")}</strong>
+                      <span>${String(workout.km).replace(".", ",")} km en ${workout.duration} min</span>
+                    </div>
+                    <button type="button" class="ghost-button" data-action="delete-workout" data-id="${escapeHtml(workout.id)}">Supprimer</button>
+                  </div>
+                  <div class="lift-table">
+                    <div class="lift-row">
+                      <span class="lift-name">Allure moyenne</span>
+                      <span class="lift-metrics">
+                        <span class="lift-chip">${escapeHtml(formatPace(duration / km))}</span>
+                        ${workout.hr ? `<span class="lift-chip">${workout.hr} bpm</span>` : ""}
+                      </span>
+                    </div>
+                  </div>
+                </article>
               `;
             })
             .join("")}
@@ -3961,6 +4003,58 @@
     `;
   }
 
+  // « Qu'est-ce que je dois faire ? » — la réponse d'abord, les statistiques ensuite (v4.9).
+  function NextUpBlock() {
+    const todayKey = dateKey();
+    const today = programActive() ? programSessionFor(todayKey) : null;
+
+    let next = null;
+    for (let i = 1; i <= 7; i++) {
+      const key = keyOffset(-i);
+      const session = programActive(key) ? programSessionFor(key) : null;
+      if (session && session.kind !== "repos") {
+        next = { key, session };
+        break;
+      }
+    }
+
+    const logged = (day().workouts || []).length > 0 || daySessions().length > 0;
+    const todayLine = today
+      ? today.kind === "repos"
+        ? `<strong>Repos planifié</strong><span>${escapeHtml(today.focus)}</span>`
+        : `<strong>${escapeHtml(today.title)}</strong><span>${escapeHtml(today.focus)}${today.duration ? ` · ${today.duration} min` : ""}${
+            today.rpe ? ` · RPE ${escapeHtml(String(today.rpe))}` : ""
+          }</span>`
+      : `<strong>Le bloc démarre le ${escapeHtml(formatFrDate(programStartDate()))}</strong><span>D'ici là : check-ins quotidiens et mesure de référence.</span>`;
+
+    return `
+      <div class="nextup">
+        <div class="nextup-row">
+          <span class="nextup-tag">Aujourd'hui</span>
+          <div class="nextup-text">${todayLine}</div>
+          ${
+            today && today.kind !== "repos"
+              ? `<button type="button" class="${logged ? "secondary-button" : "primary-button"}" data-goto="today:workout">${
+                  logged ? "Séance enregistrée" : "Ouvrir la séance"
+                }</button>`
+              : ""
+          }
+        </div>
+        ${
+          next
+            ? `<div class="nextup-row secondary">
+                <span class="nextup-tag">Ensuite</span>
+                <div class="nextup-text">
+                  <strong>${escapeHtml(formatFrDate(next.key))} — ${escapeHtml(next.session.title)}</strong>
+                  <span>${escapeHtml(next.session.focus)}</span>
+                </div>
+              </div>`
+            : ""
+        }
+      </div>
+    `;
+  }
+
   function renderRealProgram() {
     const week = programWeek();
     const phase = programPhase(week);
@@ -3970,38 +4064,46 @@
     const overview = `
       <div class="section-grid">
         <section class="card">
-          <div class="card-head">
+          <div class="card-head card-head--save">
             <div>
               <p class="eyebrow">${escapeHtml(BLOC1.name)}</p>
               <h2>${upcoming ? `Départ ${escapeHtml(formatFrDate(programStartDate()))}` : week === 0 ? "Semaine d'amorce — S1 lundi 27/07" : `Semaine ${week} sur ${BLOC1.totalWeeks}`}</h2>
             </div>
-            ${upcoming ? StatusBadge(`J-${daysUntilBlockStart()}`, "info") : StatusBadge(`${stats.completion} % du bloc`, "info")}
+            ${
+              upcoming
+                ? StatusBadge(`J-${daysUntilBlockStart()}`, "info")
+                : stats.planned
+                  ? StatusBadge(`${stats.completion} % du bloc`, "info")
+                  : StatusBadge(escapeHtml(phase?.label || "Amorce"), "info")
+            }
           </div>
           <p class="small-text">${escapeHtml(BLOC1.goal)}</p>
-          <p class="small-text"><a href="${BLOC1.guideUrl}" target="_blank" rel="noopener">Guide complet du bloc → chaque exercice expliqué, avec sa vidéo de démonstration</a></p>
-          <div class="stat-grid">
-            <div class="stat-tile"><span>Séances comptées</span><strong>${stats.done} / ${stats.planned || "0"}</strong></div>
-            <div class="stat-tile"><span>Total du bloc</span><strong>${stats.totalPlanned}</strong></div>
-            <div class="stat-tile"><span>Deload</span><strong>Semaine ${BLOC1.deloadWeek}</strong></div>
-            <div class="stat-tile"><span>Phase</span><strong>${escapeHtml(phase?.label || "Préparation")}</strong></div>
-          </div>
+          ${NextUpBlock()}
           ${
             phase
               ? `<div class="notice"><strong>Objectif de la semaine</strong><p>${escapeHtml(phase.weeklyGoal)}</p></div>`
               : `<div class="notice"><strong>D'ici le départ</strong><p>Check-ins quotidiens pour construire ta base de readiness, export CSV Hevy au coach pour calibrer les charges, tour de taille de référence à mesurer.</p></div>`
           }
+          <p class="small-text">Bloc de ${BLOC1.totalWeeks} semaines · ${stats.totalPlanned} séances prévues · deload en semaine ${BLOC1.deloadWeek}${
+            stats.planned ? ` · ${stats.done} séance${stats.done > 1 ? "s" : ""} conforme${stats.done > 1 ? "s" : ""} sur ${stats.planned} à ce stade` : ""
+          }.</p>
+          <p class="small-text"><a href="${BLOC1.guideUrl}" target="_blank" rel="noopener">Guide complet du bloc → chaque exercice expliqué, avec sa vidéo de démonstration</a></p>
           ${
             upcoming
               ? `<div class="button-row" style="margin-top:14px"><button type="button" class="secondary-button" data-action="start-block-now">${icon("play")}Commencer dès cette semaine</button></div>`
               : ""
           }
         </section>
-        ${ProgressRing({
-          value: stats.completion,
-          label: upcoming ? "Bloc programmé" : week === 0 ? "Semaine d'amorce" : `Semaine ${week} sur ${BLOC1.totalWeeks}`,
-          sublabel: upcoming ? `Départ ${formatFrDate(programStartDate())}` : "Complétion du bloc (séances conformes)",
-          accent: "var(--indigo)",
-        })}
+        ${
+          stats.planned
+            ? ProgressRing({
+                value: stats.completion,
+                label: week === 0 ? "Semaine d'amorce" : `Semaine ${week} sur ${BLOC1.totalWeeks}`,
+                sublabel: "Séances conformes depuis le début du bloc",
+                accent: "var(--indigo)",
+              })
+            : ""
+        }
       </div>
     `;
 

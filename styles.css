@@ -1974,3 +1974,174 @@ button,
 .missing-card .card-head .small-text {
   margin: 6px 0 0;
 }
+
+/* ---- v4.9 : séances enregistrées lisibles + « ce que tu fais maintenant » ---- */
+
+.logged-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.logged-workout {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-muted);
+  padding: 14px;
+}
+
+.logged-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.logged-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.logged-title strong {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.logged-title span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.lift-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+}
+
+.lift-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+
+.lift-name {
+  font-weight: 650;
+  font-size: 0.92rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lift-metrics {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.lift-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Bloc « Aujourd'hui / Ensuite » en tête du programme */
+.nextup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.nextup-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--green) 30%, var(--border));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--green) 7%, var(--surface-muted));
+}
+
+.nextup-row.secondary {
+  border-color: var(--border);
+  background: var(--surface-muted);
+}
+
+.nextup-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.nextup-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.nextup-text strong {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.nextup-text span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.nextup-row .primary-button,
+.nextup-row .secondary-button {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 620px) {
+  .nextup-row .primary-button,
+  .nextup-row .secondary-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 620px) {
+  .nextup-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .nextup-tag {
+    order: -1;
+  }
+}
+
+/* Correctifs v4.9 : en colonne, flex-basis s'applique à la hauteur — on l'annule. */
+@media (max-width: 620px) {
+  .nextup-text {
+    flex: 0 0 auto;
+  }
+}
+
+.card-head--save > .badge {
+  align-self: flex-start;
+}
