@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.6.0";
+  const APP_VERSION = "4.7.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -117,6 +117,7 @@
   const dayDefaults = {
     weight: null,
     workouts: [],
+    activities: [], // activités importées depuis Garmin (marches, courses, muscu)
     readinessScore: null,
     readinessConfidence: "",
     decisionLabel: "",
@@ -204,6 +205,7 @@
     },
     imports: {
       health: null,
+      garmin: null,
       error: "",
       progress: 0,
     },
@@ -233,6 +235,7 @@
       ...base,
       ...entry,
       workouts: Array.isArray(entry.workouts) ? entry.workouts : [],
+      activities: Array.isArray(entry.activities) ? entry.activities : [],
       morning: { ...base.morning, ...(entry.morning || {}) },
       evening: { ...base.evening, ...(entry.evening || {}) },
       nutrition: { ...base.nutrition, ...(entry.nutrition || {}) },
@@ -658,7 +661,7 @@
         tone: "info",
       });
     }
-    if (hasSession && !workouts.length) {
+    if (hasSession && !workouts.length && !daySessions().length) {
       items.push({
         label: "Séance non enregistrée",
         detail: session.title,
@@ -2613,7 +2616,9 @@
         status: state.sources.garmin,
         copy: hasTrainingData()
           ? "Sommeil, HRV, FC repos, charge, running. Données locales de démonstration."
-          : "Non connecté. Les données Garmin apparaîtront après import ou connexion future.",
+          : state.imports.garmin
+            ? `Activités importées : ${state.imports.garmin.count} sur ${state.imports.garmin.days} jour(s). Sommeil, HRV et FC repos ne figurent pas dans cet export — ils viennent d'Apple Santé.`
+            : "Non connecté. Les données Garmin apparaîtront après import du fichier Activities.csv.",
       },
       {
         name: "Hevy",
@@ -2698,6 +2703,323 @@
     return "bad";
   }
 
+  // ---- Import Garmin « Activities.csv » (v4.7) ----
+  // Export Garmin Connect : une ligne par activité. On ne stocke que ce qui sert
+  // au coach, et les marches restent des activités libres (pas des séances).
+
+  const GARMIN_SESSION_KINDS = {
+    course: ["course à pied", "course", "trail", "tapis de course", "course sur tapis", "running"],
+    velo: ["vélo", "velo", "cyclisme", "vtt", "vélo d'intérieur", "vélo d’intérieur"],
+    muscu: ["musculation", "renforcement musculaire", "force", "entraînement en force"],
+    natation: ["natation", "nage", "natation en piscine"],
+    marche: ["marche à pied", "marche", "randonnée", "randonnee", "marche nordique"],
+  };
+
+  function garminKind(rawType) {
+    const type = String(rawType || "").toLowerCase().trim();
+    for (const [kind, names] of Object.entries(GARMIN_SESSION_KINDS)) {
+      if (names.some((name) => type.includes(name))) return kind;
+    }
+    return "autre";
+  }
+
+  // CSV Garmin : champs entre guillemets, virgules de milliers ("1,010" pas), nombres décimaux au point.
+  function parseCsv(text) {
+    const rows = [];
+    let row = [];
+    let value = "";
+    let quoted = false;
+    const clean = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+    for (let i = 0; i < clean.length; i++) {
+      const char = clean[i];
+      if (quoted) {
+        if (char === '"') {
+          if (clean[i + 1] === '"') {
+            value += '"';
+            i++;
+          } else quoted = false;
+        } else value += char;
+        continue;
+      }
+      if (char === '"') quoted = true;
+      else if (char === ",") {
+        row.push(value);
+        value = "";
+      } else if (char === "\n") {
+        row.push(value);
+        if (row.some((cell) => cell.trim() !== "")) rows.push(row);
+        row = [];
+        value = "";
+      } else value += char;
+    }
+    row.push(value);
+    if (row.some((cell) => cell.trim() !== "")) rows.push(row);
+    return rows;
+  }
+
+  function garminNumber(raw) {
+    if (raw === undefined || raw === null) return null;
+    const text = String(raw).trim();
+    if (!text || text === "--") return null;
+    const value = Number(text.replace(/\s/g, "").replace(/,/g, ""));
+    return Number.isFinite(value) ? value : null;
+  }
+
+  // "00:57:00" ou "00:07:18.1" → minutes décimales
+  function garminMinutes(raw) {
+    const text = String(raw || "").trim();
+    if (!text || text === "--") return null;
+    const parts = text.split(":").map((part) => Number(part));
+    if (parts.some((part) => !Number.isFinite(part))) return null;
+    let minutes = null;
+    if (parts.length === 3) minutes = parts[0] * 60 + parts[1] + parts[2] / 60;
+    else if (parts.length === 2) minutes = parts[0] + parts[1] / 60;
+    if (minutes === null) return null;
+    return Math.round(minutes * 10) / 10;
+  }
+
+  function parseGarminActivities(text) {
+    const rows = parseCsv(text);
+    if (rows.length < 2) throw new Error("Fichier vide ou illisible.");
+    const header = rows[0].map((cell) => cell.trim());
+    const findColumn = (...candidates) =>
+      header.findIndex((name) => {
+        const lower = name.toLowerCase();
+        return candidates.some((candidate) => lower.includes(candidate));
+      });
+
+    const columns = {
+      type: findColumn("type d'activité", "type d’activité", "activity type"),
+      date: findColumn("date"),
+      title: findColumn("titre", "title"),
+      distance: findColumn("distance"),
+      calories: findColumn("calories"),
+      duration: findColumn("durée", "duree", "time"),
+      hrAvg: findColumn("fréquence cardiaque moyenne", "avg hr"),
+      hrMax: findColumn("fréquence cardiaque maximale", "max hr"),
+      steps: findColumn("pas", "steps"),
+      reps: findColumn("total répétitions", "total reps"),
+      sets: findColumn("total séries", "total sets"),
+      pace: findColumn("allure moyenne", "avg pace"),
+      ascent: findColumn("ascension totale", "total ascent"),
+    };
+    if (columns.type < 0 || columns.date < 0 || columns.duration < 0) {
+      throw new Error("Ce fichier ne ressemble pas à un export Garmin « Activities.csv ».");
+    }
+
+    const activities = [];
+    rows.slice(1).forEach((row) => {
+      const rawDate = String(row[columns.date] || "").trim();
+      const match = rawDate.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+      if (!match) return;
+      const [, year, month, dayPart, hours, minutes] = match;
+      const kind = garminKind(row[columns.type]);
+      const duration = garminMinutes(row[columns.duration]);
+      if (duration === null) return;
+      activities.push({
+        id: `garmin-${year}${month}${dayPart}-${hours}${minutes}-${kind}`,
+        source: "garmin",
+        dateKey: `${year}-${month}-${dayPart}`,
+        time: `${hours}:${minutes}`,
+        kind,
+        neat: kind === "marche",
+        title: String(row[columns.title] || "").trim() || String(row[columns.type] || "").trim(),
+        duration,
+        km: columns.distance >= 0 ? garminNumber(row[columns.distance]) : null,
+        calories: columns.calories >= 0 ? garminNumber(row[columns.calories]) : null,
+        hrAvg: columns.hrAvg >= 0 ? garminNumber(row[columns.hrAvg]) : null,
+        hrMax: columns.hrMax >= 0 ? garminNumber(row[columns.hrMax]) : null,
+        steps: columns.steps >= 0 ? garminNumber(row[columns.steps]) : null,
+        reps: columns.reps >= 0 ? garminNumber(row[columns.reps]) : null,
+        sets: columns.sets >= 0 ? garminNumber(row[columns.sets]) : null,
+        ascent: columns.ascent >= 0 ? garminNumber(row[columns.ascent]) : null,
+      });
+    });
+    if (!activities.length) throw new Error("Aucune activité datée n'a pu être lue dans ce fichier.");
+    return activities;
+  }
+
+  async function importGarminFile(file) {
+    if (!file) return;
+    if (!/\.csv$/i.test(file.name)) {
+      state.imports.error = "Choisis le fichier CSV exporté depuis Garmin Connect (Activités → Exporter au format CSV).";
+      persistNow();
+      render();
+      return;
+    }
+    try {
+      const activities = parseGarminActivities(await file.text());
+      let added = 0;
+      let sessions = 0;
+      let walks = 0;
+      const days = new Set();
+
+      activities.forEach((activity) => {
+        const entry = day(activity.dateKey);
+        if (!Array.isArray(entry.activities)) entry.activities = [];
+        // Ré-import du même fichier : on met à jour la ligne au lieu de la dupliquer.
+        const index = entry.activities.findIndex((existing) => existing.id === activity.id);
+        if (index >= 0) entry.activities[index] = activity;
+        else {
+          entry.activities.push(activity);
+          added += 1;
+        }
+        entry.activities.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+        days.add(activity.dateKey);
+        if (activity.neat) walks += 1;
+        else sessions += 1;
+      });
+
+      const dates = activities.map((activity) => activity.dateKey).sort();
+      state.imports.garmin = {
+        fileName: file.name,
+        importedAt: new Date().toISOString(),
+        count: activities.length,
+        sessions,
+        walks,
+        days: days.size,
+        firstDate: dates[0],
+        lastDate: dates[dates.length - 1],
+      };
+      state.imports.error = "";
+      state.sources.garmin = "partial";
+      state.sources.import = "connected";
+
+      addCoachMessage(
+        "coach",
+        `Import Garmin : ${activities.length} activité(s) lues sur ${days.size} jour(s) (${sessions} séance(s), ${walks} marche(s)), du ${formatFrDate(dates[0])} au ${formatFrDate(dates[dates.length - 1])}. ${
+          added ? `${added} nouvelle(s) entrée(s) ajoutée(s) au journal.` : "Rien de nouveau : ces activités étaient déjà dans le journal."
+        } Les marches comptent comme activité libre, pas comme séances.`
+      );
+      logDecision(
+        "import",
+        "Activités Garmin importées",
+        `${activities.length} activité(s) sur ${days.size} jour(s)`,
+        `Fichier ${file.name}`,
+        "Eleve"
+      );
+      persistNow();
+      render();
+    } catch (error) {
+      state.imports.error = error.message || "Fichier illisible.";
+      state.sources.import = "error";
+      persistNow();
+      render();
+    }
+  }
+
+  // ---- Lectures dérivées des activités importées ----
+
+  function dayActivities(key = dateKey()) {
+    const entry = key === dateKey() ? day() : journalEntry(key);
+    return Array.isArray(entry?.activities) ? entry.activities : [];
+  }
+
+  function daySessions(key = dateKey()) {
+    return dayActivities(key).filter((activity) => !activity.neat);
+  }
+
+  function walkStats(daysBack = 7) {
+    let minutes = 0;
+    let km = 0;
+    let steps = 0;
+    let outings = 0;
+    let activeDays = 0;
+    for (let i = 0; i < daysBack; i++) {
+      const walks = dayActivities(keyOffset(i)).filter((activity) => activity.neat);
+      if (walks.length) activeDays += 1;
+      walks.forEach((walk) => {
+        minutes += walk.duration || 0;
+        km += walk.km || 0;
+        steps += walk.steps || 0;
+        outings += 1;
+      });
+    }
+    return {
+      minutes: Math.round(minutes),
+      km: Math.round(km * 10) / 10,
+      steps: Math.round(steps),
+      outings,
+      activeDays,
+      daysBack,
+    };
+  }
+
+  const ACTIVITY_LABELS = {
+    marche: "Marche",
+    course: "Course",
+    velo: "Vélo",
+    muscu: "Musculation",
+    natation: "Natation",
+    autre: "Activité",
+  };
+
+  function ActivityLine(activity) {
+    const bits = [];
+    if (activity.km) bits.push(`${String(activity.km).replace(".", ",")} km`);
+    bits.push(`${Math.round(activity.duration)} min`);
+    if (activity.hrAvg) bits.push(`${activity.hrAvg} bpm moy`);
+    if (activity.calories) bits.push(`${activity.calories} kcal`);
+    if (activity.sets && activity.reps) bits.push(`${activity.sets} séries · ${activity.reps} reps`);
+    return `${ACTIVITY_LABELS[activity.kind] || "Activité"} ${activity.time} — ${bits.join(" · ")}`;
+  }
+
+  function TodayActivitiesCard() {
+    const activities = dayActivities();
+    if (!activities.length) return "";
+    const walk = walkStats(1);
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Activités importées · Garmin</p>
+            <h2>${activities.length} activité${activities.length > 1 ? "s" : ""} aujourd'hui</h2>
+          </div>
+          ${StatusBadge("Montre", "good")}
+        </div>
+        ${
+          walk.outings
+            ? `<p class="small-text">Marche du jour : ${walk.outings} sortie${walk.outings > 1 ? "s" : ""} · ${walk.minutes} min · ${String(walk.km).replace(".", ",")} km${
+                walk.steps ? ` · ${walk.steps} pas` : ""
+              }. Comptée comme activité libre, pas comme séance.</p>`
+            : ""
+        }
+        <div class="exercise-list">
+          ${activities
+            .map((activity) => `<div class="exercise-row"><strong>${escapeHtml(ActivityLine(activity))}</strong></div>`)
+            .join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function WalkVolumeCard() {
+    if (!state.imports.garmin) return "";
+    const week = walkStats(7);
+    if (!week.outings) return "";
+    const perDay = Math.round(week.minutes / week.daysBack);
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Activité libre · 7 jours</p>
+            <h2>Marche et dépense de fond</h2>
+          </div>
+          ${StatusBadge(perDay >= 30 ? "Bon volume" : "À augmenter", perDay >= 30 ? "good" : "watch")}
+        </div>
+        <div class="stat-grid">
+          <div class="stat-tile"><span>Temps de marche</span><strong>${week.minutes} min</strong></div>
+          <div class="stat-tile"><span>Moyenne / jour</span><strong>${perDay} min</strong></div>
+          <div class="stat-tile"><span>Distance</span><strong>${String(week.km).replace(".", ",")} km</strong></div>
+          <div class="stat-tile"><span>Sorties</span><strong>${week.outings}</strong></div>
+          <div class="stat-tile"><span>Jours actifs</span><strong>${week.activeDays}/7</strong></div>
+          <div class="stat-tile"><span>Pas cumulés</span><strong>${week.steps ? week.steps.toLocaleString("fr-FR") : "—"}</strong></div>
+        </div>
+        <p class="small-text">La marche ne remplace pas une séance : elle soutient la dépense quotidienne et la récupération sans ajouter de fatigue neuromusculaire.</p>
+      </section>
+    `;
+  }
+
   function renderImportPanel() {
     const health = state.imports.health;
     return `
@@ -2707,7 +3029,23 @@
             <p class="eyebrow">Import</p>
             <h2>Importer tes données</h2>
           </div>
-          ${StatusBadge(health ? "Apple Santé importé" : "Aucun import", health ? "good" : "watch")}
+          ${(() => {
+            const done = [health ? "Apple Santé" : null, state.imports.garmin ? "Garmin" : null].filter(Boolean);
+            return StatusBadge(done.length ? `${done.join(" + ")} importé${done.length > 1 ? "s" : ""}` : "Aucun import", done.length ? "good" : "watch");
+          })()}
+        </div>
+        <div class="import-drop">
+          <strong>Garmin — activités</strong>
+          <p>Dans Garmin Connect (site web) : <em>Activités → Toutes les activités → Exporter au format CSV</em>. Sélectionne le fichier <code>Activities.csv</code>.</p>
+          <label class="primary-button file-button">
+            ${icon("play")}Choisir Activities.csv
+            <input type="file" accept=".csv,text/csv" data-import="garmin" />
+          </label>
+          ${
+            state.imports.garmin
+              ? `<p class="small-text">Dernier import : ${escapeHtml(state.imports.garmin.fileName)} · ${state.imports.garmin.count} activité(s) sur ${state.imports.garmin.days} jour(s), du ${formatFrDate(state.imports.garmin.firstDate)} au ${formatFrDate(state.imports.garmin.lastDate)}.</p>`
+              : `<p class="small-text">Séances et marches rejoignent le journal du bon jour. Ré-importer le même fichier ne crée pas de doublon.</p>`
+          }
         </div>
         <div class="import-drop">
           <strong>Apple Santé</strong>
@@ -3420,6 +3758,7 @@
           </div>
           ${WorkoutLogCard()}
           ${TodayWorkoutsList()}
+          ${TodayActivitiesCard()}
         </div>
       `,
       evening: `
@@ -3437,6 +3776,7 @@
       data: `
         <div class="page-grid">
           ${renderImportPanel()}
+          ${WalkVolumeCard()}
           ${DataSourceStatus()}
         </div>
       `,
@@ -4808,6 +5148,10 @@
     }
     if (target.dataset.import === "backup") {
       importBackupFile(target.files?.[0]);
+      return;
+    }
+    if (target.dataset.import === "garmin") {
+      importGarminFile(target.files?.[0]);
       return;
     }
     if (!target.dataset.scope || !target.dataset.key) return;
