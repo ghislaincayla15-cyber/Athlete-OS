@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.9.0";
+  const APP_VERSION = "4.9.1";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
