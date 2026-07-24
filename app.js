@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.9.1";
+  const APP_VERSION = "5.0.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -168,6 +168,8 @@
     uiVersion: 2,
     settingsOpen: false,
     movePickerOpen: false,
+    openExercise: null,
+    openExerciseDetail: "",
     expandedProgramDay: null,
     journal: {},
     program: {
@@ -493,6 +495,8 @@
         chat: Array.isArray(saved.chat) && saved.chat.length ? saved.chat : structuredClone(defaultState.chat),
         settingsOpen: false,
         movePickerOpen: false,
+        openExercise: null,
+        openExerciseDetail: "",
         // Refonte visuelle : le sombre devient le thème par défaut, une seule fois.
         theme: saved.uiVersion >= 2 ? saved.theme || "dark" : "dark",
         uiVersion: 2,
@@ -2350,13 +2354,19 @@
           ${
             session.exercises.length
               ? `<div class="exercise-list">
-                  ${session.exercises
-                    .map((item) => `<div class="exercise-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.detail)}</span></div>`)
-                    .join("")}
-                </div>`
+                  ${session.exercises.map((item) => ExerciseRow(item, "session")).join("")}
+                </div>
+                <p class="small-text">Touche un exercice pour la fiche : exécution, erreurs à éviter et vidéo.</p>`
               : ""
           }
           ${session.micro ? `<p class="small-text">Micro-sessions du jour · ${escapeHtml(session.micro)}</p>` : ""}
+          ${
+            session.kind === "muscu"
+              ? `<div class="notice"><strong>Comment mener la séance</strong><p>Échauffement 8-10 min (mobilité + 2 séries légères du premier exercice), puis les exercices dans l'ordre affiché. Respecte les temps de repos : ils font partie de la charge. Le RPE est ton garde-fou — RPE 7 = il te reste 3 répétitions en réserve, RPE 8 = 2. Tu ne vas jamais à l'échec sur ce bloc. Douleur mollet > 3/10 → tu arrêtes l'exercice et tu le signales au bilan du soir.</p></div>`
+              : session.kind === "course"
+                ? `<div class="notice"><strong>Comment mener la séance</strong><p>Échauffement systématique : 5 min de marche rapide puis 5 min de trot très lent. Zone 2 = tu peux tenir une conversation en phrases complètes du début à la fin ; si tu es essoufflé, tu vas trop vite, ralentis même si l'allure te paraît ridicule. Douleur mollet > 3/10 → tu passes en marche et tu le notes au bilan.</p></div>`
+                : ""
+          }
           ${
             isDeloadWeek && session.kind !== "repos"
               ? `<div class="notice"><strong>Semaine de deload planifiée</strong><p>Volume réduit de 40 % (2 séries par exercice), RPE plafonné à 6, aucune série à l'échec. Courses : 30 min faciles.</p></div>`
@@ -3286,6 +3296,533 @@
     };
   }
 
+  // ---- Fiches d'exercices (v5.0) ----
+  // Extraites du guide du bloc : au lieu d'ouvrir le guide et d'y chercher l'exercice,
+  // on touche la ligne de l'exercice et la fiche s'ouvre dans l'app.
+
+  const EXERCISE_LIBRARY = {
+    "Squat": {
+      "title": "Squat barre",
+      "rx": "4 × 4-6 · RPE 7→8 · repos 3 min",
+      "exec": "barre sur les trapèzes, pieds largeur épaules pointes légèrement ouvertes. Inspire, gaine, descends en poussant les genoux dans l'axe des orteils jusqu'à cuisses sous la parallèle (ou ta profondeur propre), remonte en poussant le sol.",
+      "err": "talons qui décollent, genoux qui rentrent, dos qui s'arrondit en bas. Si la cheville limite ta profondeur, petites cales sous les talons.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=Dr41gZwfTfM",
+          "label": "Vidéo — Olymp'Fit (FR)"
+        }
+      ]
+    },
+    "Presse ou fentes marchées": {
+      "title": "Presse à cuisses ou fentes marchées",
+      "rx": "3 × 8-10 · RPE 7 · repos 2 min",
+      "exec": "pieds milieu du plateau largeur épaules, descends jusqu'à ~90° de genou sans décoller le bas du dos du dossier, pousse sans verrouiller brutalement les genoux.",
+      "err": "amplitude trop courte, bas du dos qui s'enroule en bas, genoux qui rentrent.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=aFoU2J4dru8",
+          "label": "Vidéo presse — EspaceMusculation (FR)"
+        },
+        {
+          "url": "https://www.youtube.com/watch?v=L7iPmk1GThE",
+          "label": "Vidéo fentes — MaxiPerformance (FR)"
+        }
+      ]
+    },
+    "Leg curl": {
+      "title": "Leg curl",
+      "rx": "3 × 8-12 · RPE 8 · repos 90 s",
+      "exec": "réglage machine pour que le genou soit aligné avec l'axe de rotation. Fléchis en contrôlant, serre en haut 1 s, redescends en 2-3 s sans laisser tomber la charge.",
+      "err": "hanches qui décollent du banc, retour balistique.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=UHGYDxCQPoc",
+          "label": "Vidéo — TeamSuperPhysique (FR)"
+        }
+      ]
+    },
+    "Mollets debout": {
+      "title": "Mollets debout (genou tendu) ⚠",
+      "rx": "3 × 10-12 · descente 3 s · repos 90 s",
+      "exec": "pleine amplitude — étirement complet en bas (talon sous le niveau de l'appui), montée maximale sur pointes, descente lente en 3 secondes. C'est ton renforcement protecteur du gastrocnémien.",
+      "err": "rebond en bas, amplitude partielle, aller trop lourd trop vite. Douleur > 3/10 → stop et signale-le.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=p8mRMZY0fB0",
+          "label": "Vidéo — VP Coaching (FR)"
+        }
+      ]
+    },
+    "Gainage lesté": {
+      "title": "Gainage lesté (planche ou roulette)",
+      "rx": "3 séries · repos 60 s",
+      "exec": "planche lestée 30-45 s (bassin rétroversé, fessiers serrés) ou roulette : à genoux, déroule vers l'avant en gardant le bassin verrouillé, reviens avec les abdos — pas avec les bras.",
+      "err": "bas du dos qui creuse — c'est LE signal d'arrêt de la série.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=yJ2Or6zX3LM",
+          "label": "Vidéo roulette — Olymp'Fit (FR)"
+        }
+      ]
+    },
+    "Extension lombaire (banc à lombaires)": {
+      "title": "Extension lombaire au banc",
+      "rx": "3 × 12 · RPE 7 · repos 90 s",
+      "exec": "banc à 45°, appui sur les cuisses (crête du bassin libre), descends dos neutre, remonte jusqu'à l'alignement tronc-jambes en serrant fessiers et ischios — pas d'hyperextension.",
+      "err": "monter trop haut (cambrure excessive), arrondir volontairement le dos en bas.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=7bDZtdQUj5A",
+          "label": "Vidéo — TeamSuperPhysique (FR)"
+        }
+      ]
+    },
+    "Développé couché": {
+      "title": "Développé couché barre",
+      "rx": "4 × 4-6 · RPE 7→8 · repos 3 min",
+      "exec": "omoplates serrées et abaissées, léger arc lombaire, pieds ancrés. Descends la barre vers le bas des pectoraux, coudes à ~45-70° du buste, pousse en ligne légèrement oblique vers les yeux.",
+      "err": "coudes évasés à 90°, fesses qui décollent, rebond sur la poitrine.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=feWp7jZopI8",
+          "label": "Vidéo — Olymp'Fit (FR)"
+        }
+      ]
+    },
+    "Tractions (lestées si > 8)": {
+      "title": "Tractions (lestées si > 8 reps)",
+      "rx": "4 × 5-8 · RPE 8 · repos 2-3 min",
+      "exec": "départ bras tendus omoplates engagées, tire les coudes vers les hanches jusqu'au menton au-dessus de la barre, redescends en contrôlant jusqu'à l'extension complète.",
+      "err": "demi-amplitude, balancement (kipping), épaules qui montent vers les oreilles.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=xxPt6sxC8xo",
+          "label": "Vidéo — Amplitude Realm (FR)"
+        }
+      ]
+    },
+    "Tractions pronation": {
+      "title": "Tractions (lestées si > 8 reps)",
+      "rx": "4 × 5-8 · RPE 8 · repos 2-3 min",
+      "exec": "départ bras tendus omoplates engagées, tire les coudes vers les hanches jusqu'au menton au-dessus de la barre, redescends en contrôlant jusqu'à l'extension complète.",
+      "err": "demi-amplitude, balancement (kipping), épaules qui montent vers les oreilles.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=xxPt6sxC8xo",
+          "label": "Vidéo — Amplitude Realm (FR)"
+        }
+      ]
+    },
+    "Développé militaire": {
+      "title": "Développé militaire barre",
+      "rx": "3 × 6-8 · RPE 7,5 · repos 2 min",
+      "exec": "debout, fessiers et abdos serrés, barre au niveau des clavicules. Pousse verticalement en rentrant légèrement la tête puis en la repassant devant, verrouillage complet au-dessus du crâne.",
+      "err": "cambrure lombaire excessive (pousser avec le dos), trajectoire vers l'avant.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=_JOHuViN9Mk",
+          "label": "Vidéo — All-Musculation (FR)"
+        }
+      ]
+    },
+    "Rowing haltère unilatéral": {
+      "title": "Rowing haltère unilatéral",
+      "rx": "3 × 8-10 / bras · RPE 8 · repos 90 s",
+      "exec": "main et genou opposés sur le banc, dos plat. Tire l'haltère vers la hanche (pas vers l'épaule), coude près du corps, serre l'omoplate en haut, descends en étirement complet.",
+      "err": "rotation du buste pour tricher, tirer avec le biceps, dos rond.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=xJX8_oLf-Vo",
+          "label": "Vidéo — Antoine MH (FR)"
+        }
+      ]
+    },
+    "Rowing barre": {
+      "title": "Rowing haltère unilatéral",
+      "rx": "3 × 8-10 / bras · RPE 8 · repos 90 s",
+      "exec": "main et genou opposés sur le banc, dos plat. Tire l'haltère vers la hanche (pas vers l'épaule), coude près du corps, serre l'omoplate en haut, descends en étirement complet.",
+      "err": "rotation du buste pour tricher, tirer avec le biceps, dos rond.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=xJX8_oLf-Vo",
+          "label": "Vidéo — Antoine MH (FR)"
+        }
+      ]
+    },
+    "Face pull": {
+      "title": "Face pull",
+      "rx": "3 × 12-15 · RPE 8 · repos 60 s",
+      "exec": "poulie hauteur visage, corde tirée vers le front/les yeux en écartant les mains, coudes hauts, rotation externe finale (poings vers l'arrière). Santé d'épaule = exercice clé.",
+      "err": "trop lourd (ça devient un rowing), coudes qui tombent.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=67PKTDSKWWM",
+          "label": "Vidéo — Guillaume Simon (FR)"
+        }
+      ]
+    },
+    "Face pull + gainage": {
+      "title": "Face pull",
+      "rx": "3 × 12-15 · RPE 8 · repos 60 s",
+      "exec": "poulie hauteur visage, corde tirée vers le front/les yeux en écartant les mains, coudes hauts, rotation externe finale (poings vers l'arrière). Santé d'épaule = exercice clé.",
+      "err": "trop lourd (ça devient un rowing), coudes qui tombent.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=67PKTDSKWWM",
+          "label": "Vidéo — Guillaume Simon (FR)"
+        }
+      ]
+    },
+    "Curl biceps barre EZ": {
+      "title": "Curl biceps barre EZ",
+      "rx": "3 × 10-12 · RPE 8 · repos 75 s",
+      "exec": "coudes fixes le long du corps, monte la barre en contractant, descends en 2-3 s jusqu'à l'extension quasi complète.",
+      "err": "élan du buste, coudes qui avancent en haut du mouvement.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=l0hojGc8ss4",
+          "label": "Vidéo — Toute la Musculation (FR)"
+        }
+      ]
+    },
+    "Soulevé de terre roumain": {
+      "title": "Soulevé de terre roumain",
+      "rx": "4 × 6-8 · RPE 7 · repos 3 min",
+      "exec": "départ debout barre en main, genoux légèrement fléchis et FIXES. Pousse les hanches vers l'arrière, barre au ras des cuisses/tibias, descends jusqu'à l'étirement franc des ischios (mi-tibia environ), remonte en poussant les hanches vers l'avant.",
+      "err": "dos qui s'arrondit, barre qui s'éloigne des jambes, plier les genoux (ça devient un soulevé classique).",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=QrgidWFKaYs",
+          "label": "Vidéo — Myprotein France (FR)"
+        }
+      ]
+    },
+    "Squat bulgare": {
+      "title": "Squat bulgare",
+      "rx": "3 × 8-10 / jambe · RPE 8 · repos 90 s",
+      "exec": "pied arrière sur un banc, pied avant à ~60-70 cm. Descends verticalement, genou avant dans l'axe du pied, jusqu'à ce que le genou arrière frôle le sol. Haltères en mains quand le poids du corps devient facile.",
+      "err": "pied avant trop près (genou qui file devant), buste qui s'effondre, pousser avec la jambe arrière.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=2C-uNgKwPLE",
+          "label": "Vidéo — ScottHermanFitness (EN)"
+        }
+      ]
+    },
+    "Hip thrust": {
+      "title": "Hip thrust barre",
+      "rx": "3 × 8-12 · RPE 8 · repos 2 min",
+      "exec": "haut du dos sur le banc, barre sur les hanches (coussin), pieds à plat genoux à 90° en haut. Pousse par les talons jusqu'à l'alignement complet épaules-hanches-genoux, menton rentré, serre fort 1 s en haut.",
+      "err": "hyperextension lombaire en haut (pousse avec les fessiers, pas le dos), amplitude coupée.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=IMPB5EMTcqI",
+          "label": "Vidéo — Myprotein France (FR)"
+        }
+      ]
+    },
+    "Mollets assis (soléaire)": {
+      "title": "Mollets assis (soléaire) ⚠",
+      "rx": "3 × 12-15 · tempo contrôlé · repos 60 s",
+      "exec": "genoux fléchis à 90° sous le boudin, pleine amplitude, montée complète et descente lente. Genou fléchi = c'est le soléaire qui travaille — LE muscle du coureur, ta priorité prévention.",
+      "err": "rebonds rapides, amplitude partielle. Douleur > 3/10 → stop.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=6O5hh1rBtx8",
+          "label": "Vidéo — Colossus Fitness (EN)"
+        }
+      ]
+    },
+    "Gainage anti-rotation": {
+      "title": "Pallof press (anti-rotation)",
+      "rx": "3 × 10 / côté · repos 60 s",
+      "exec": "poulie hauteur poitrine, de profil, mains jointes au sternum. Tends les bras devant toi SANS laisser le buste tourner, tiens 2 s, reviens. La résistance essaie de te faire pivoter — tu résistes.",
+      "err": "épaules qui tournent, se pencher, trop lourd.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=_2xWmYNnFS8",
+          "label": "Vidéo — Colossus Fitness (EN)"
+        }
+      ]
+    },
+    "Abduction de hanche (machine ou bande élastique)": {
+      "title": "Abduction de hanche",
+      "rx": "3 × 15 / jambe · RPE 7 · repos 60 s",
+      "exec": "machine (buste légèrement penché en avant pour cibler le moyen fessier) ou élastique au-dessus des genoux. Écarte en contrôlant, tiens 1 s, reviens lentement. Stabilité du bassin = genoux protégés en course.",
+      "err": "mouvement balistique, se pencher en arrière.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=OjI5OpV6IWA",
+          "label": "Vidéo — Colossus Fitness (EN)"
+        }
+      ]
+    },
+    "Développé incliné haltères": {
+      "title": "Développé incliné haltères",
+      "rx": "4 × 8-10 · RPE 8 · repos 2 min",
+      "exec": "banc à 30°, omoplates serrées. Descends les haltères de part et d'autre de la poitrine haute, coudes à ~45°, pousse en rapprochant légèrement les haltères en haut sans les entrechoquer.",
+      "err": "banc trop incliné (ça devient des épaules), amplitude coupée en bas.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=AQFvfZO3Rb4",
+          "label": "Vidéo — TeamSuperPhysique (FR)"
+        }
+      ]
+    },
+    "Tirage vertical prise neutre": {
+      "title": "Tirage vertical prise neutre",
+      "rx": "3 × 8-12 · RPE 8 · repos 90 s",
+      "exec": "poignées neutres (paumes face à face), buste légèrement incliné en arrière et fixe. Tire vers le haut des pectoraux en descendant les coudes, étirement complet en haut à chaque rep.",
+      "err": "se balancer pour tirer, couper l'étirement du haut.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=kVB6SlEyjQM",
+          "label": "Vidéo — Physique Development (EN)"
+        }
+      ]
+    },
+    "Élévations latérales": {
+      "title": "Élévations latérales",
+      "rx": "4 × 12-15 · RPE 8-9 · repos 60 s",
+      "exec": "léger penché en avant, coudes à peine fléchis. Monte les haltères sur les côtés jusqu'à l'horizontale, comme si tu versais un verre d'eau, descends en 2 s.",
+      "err": "élan des jambes, monter au-dessus de l'horizontale avec les trapèzes, trop lourd.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=q_DYeb_daeY",
+          "label": "Vidéo — Olymp'Fit (FR)"
+        }
+      ]
+    },
+    "Rowing câble assis": {
+      "title": "Rowing câble assis",
+      "rx": "3 × 10-12 · RPE 8 · repos 90 s",
+      "exec": "buste vertical et fixe, tire la poignée vers le nombril en serrant les omoplates, laisse revenir en étirement complet sans te faire emporter vers l'avant.",
+      "err": "balancement avant-arrière du buste, épaules enroulées.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=w2Q7LbkhtLI",
+          "label": "Vidéo — Olymp'Fit (FR)"
+        }
+      ]
+    },
+    "Curl incliné + triceps corde": {
+      "title": "Superset : curl incliné + extension triceps corde",
+      "rx": "3 × 10-12 chaque · repos 75 s",
+      "exec": "",
+      "err": "coudes qui avancent (curl), coudes qui s'écartent (triceps).",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=wBvTNeXcbxQ",
+          "label": "Vidéo curl — Enzo TV (FR)"
+        },
+        {
+          "url": "https://www.youtube.com/watch?v=n2FSCB4vRSA",
+          "label": "Vidéo triceps — Colossus (EN)"
+        }
+      ]
+    },
+    "Élévations Y (banc incliné)": {
+      "title": "Élévations Y sur banc incliné",
+      "rx": "3 × 12-15 · RPE 7-8 · repos 60 s",
+      "exec": "à plat ventre sur banc incliné, haltères légers, monte les bras en Y (pouces vers le ciel) en serrant le bas des trapèzes, redescends lentement. Santé d'épaule et posture.",
+      "err": "trop lourd (c'est un exercice léger par nature), hausser les épaules.",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=yR7cIRWw9ZY",
+          "label": "Vidéo — Live Lean TV (EN)"
+        }
+      ]
+    },
+    "Pliométrie · A-skip": {
+      "title": "A-skip",
+      "rx": "3 × 10 m",
+      "exec": "montée de genou dynamique avec petit skip sur l'appui opposé, pied qui griffe le sol sous le bassin, bras en opposition. Rythme > vitesse.",
+      "err": "",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=IBqY1eoDH8U",
+          "label": "Vidéo — Road To Speed (FR)"
+        }
+      ]
+    },
+    "Pliométrie · Ankle bounces (pogo)": {
+      "title": "Ankle bounces (pogo)",
+      "rx": "3 × 10",
+      "exec": "jambes quasi tendues, rebonds de faible amplitude uniquement par les chevilles, contacts brefs et élastiques. Prépare le mollet à la course sans les autres contraintes.",
+      "err": "",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=c2LBofIzUqs",
+          "label": "Vidéo — Live Lean TV (EN)"
+        }
+      ]
+    },
+    "Pliométrie · Médecine-ball rotation": {
+      "title": "Lancer de médecine-ball en rotation",
+      "rx": "3 × 6 / côté",
+      "exec": "de profil face à un mur, pivote hanches puis buste et lance la balle explosivement contre le mur. La puissance part des hanches, pas des bras.",
+      "err": "",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=NP2e1Szrj28",
+          "label": "Vidéo — Live Lean TV (EN)"
+        },
+        {
+          "url": "https://www.youtube.com/watch?v=7WgzHOQGgYw",
+          "label": "Vidéo — Elevate Yourself (EN)"
+        }
+      ]
+    },
+    "Pliométrie · Bondissements latéraux": {
+      "title": "Bondissements latéraux",
+      "rx": "3 × 6 / côté",
+      "exec": "pousse latéralement d'une jambe, atterris stable sur l'autre (genou aligné, 1 s de stabilisation), amplitude faible puis moyenne au fil des semaines.",
+      "err": "",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=niEGdFUQ6sY",
+          "label": "Vidéo — LPS Athletic (EN)"
+        }
+      ]
+    },
+    "Pliométrie · Départs sprint arrêtés": {
+      "title": "Départs sprint arrêtés",
+      "rx": "4 × 10-15 m à ~80 %",
+      "exec": "position fendue, penche-toi et pousse fort les premiers appuis, corps incliné vers l'avant. Allure progressive, JAMAIS au max.",
+      "err": "",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=GzZjzBm-56k",
+          "label": "Vidéo — Simple Speed Coach (EN)"
+        },
+        {
+          "url": "https://www.youtube.com/watch?v=_x1kw2WVoR4",
+          "label": "Vidéo — Rehab My Patient (EN)"
+        }
+      ]
+    },
+    "Pliométrie · Bounding (bonds horizontaux)": {
+      "title": "Bounding (bonds horizontaux)",
+      "rx": "3 × 8 contacts",
+      "exec": "foulées bondissantes exagérées, pousse complète de la jambe arrière, bras amples.",
+      "err": "",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=eIjuMzIFREs",
+          "label": "Vidéo — Simple Speed Coach (EN)"
+        }
+      ]
+    },
+    "Pliométrie · Sprints 20 m": {
+      "title": "Sprints 20 m",
+      "rx": "4 × à 85-90 %",
+      "exec": "départ arrêté, accélération progressive sur 20 m, récupération marchée complète entre les reps.",
+      "err": "",
+      "videos": []
+    },
+    "Pliométrie · Saut vertical (CMJ)": {
+      "title": "Saut vertical contremouvement (CMJ)",
+      "rx": "3 × 5 — à noter dans l'app",
+      "exec": "descente rapide en quart de squat, remonte immédiatement en sautant le plus haut possible, mains libres. C'est ta référence de puissance du bloc.",
+      "err": "",
+      "videos": [
+        {
+          "url": "https://www.youtube.com/watch?v=Jb63W4LQ8Ak",
+          "label": "Vidéo — Strength-Forge (EN)"
+        }
+      ]
+    },
+    "Pliométrie · Sautillements unipodaux": {
+      "title": "Sautillements unipodaux",
+      "rx": "Test et exercice · contacts brefs",
+      "exec": "Sur une jambe, sautillements de faible amplitude, uniquement par la cheville, genou légèrement fléchi et souple. Contacts brefs et silencieux : le bruit trahit un amorti mou. C'est le test de référence de ton mollet — 15 sautillements indolores sont un des deux critères de passage de palier pliométrique.",
+      "err": "Réception talon, genou qui s'écrase, amplitude trop grande. Douleur > 3/10 → stop, et signale-le au bilan du soir.",
+      "videos": []
+    },
+    "Pliométrie · Sauts de haies basses": {
+      "title": "Sauts de haies basses",
+      "rx": "Contacts brefs · récupération complète entre les séries",
+      "exec": "Haies basses (20-30 cm) alignées. Franchis à pieds joints, réception sur l'avant du pied puis rebond immédiat vers la haie suivante. Objectif : temps de contact au sol le plus court possible, pas la hauteur.",
+      "err": "Chercher la hauteur au lieu de la vitesse de rebond, réception talon, séries trop longues qui dégradent la qualité. Arrête la série dès que les contacts s'allongent.",
+      "videos": []
+    }
+  };
+
+  function exerciseSheet(name) {
+    return EXERCISE_LIBRARY[name] || null;
+  }
+
+  function ExerciseRow(item, context = "") {
+    const sheet = exerciseSheet(item.name);
+    if (!sheet) {
+      return `<div class="exercise-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.detail || "")}</span></div>`;
+    }
+    return `
+      <button type="button" class="exercise-row tappable" data-action="open-exercise" data-exercise="${escapeHtml(item.name)}"${
+        context ? ` data-exercise-detail="${escapeHtml(item.detail || "")}"` : ""
+      }>
+        <span class="exercise-main">
+          <strong>${escapeHtml(item.name)}</strong>
+          <span>${escapeHtml(item.detail || sheet.rx)}</span>
+        </span>
+        <span class="exercise-cue">Comment faire ›</span>
+      </button>
+    `;
+  }
+
+  function ExerciseSheetModal() {
+    const name = state.openExercise;
+    if (!name) return "";
+    const sheet = exerciseSheet(name);
+    if (!sheet) return "";
+    const prescription = state.openExerciseDetail || sheet.rx;
+    // Les fiches pliométriques du guide n'ont pas de rubrique « erreurs » :
+    // avec un mollet qui sort de rééducation, la règle de sécurité doit rester visible.
+    const errors =
+      sheet.err ||
+      (name.startsWith("Pliométrie")
+        ? "Contacts au sol brefs et silencieux : un bruit sourd trahit un amorti mou. Qualité avant quantité — arrête la série dès que les contacts s'allongent. Douleur mollet > 3/10 pendant ou douleur au réveil le lendemain → stop, signale-le au bilan du soir et redescends d'un palier."
+        : "");
+    return `
+      <div class="sheet-backdrop">
+        <section class="sheet" role="dialog" aria-label="${escapeHtml(sheet.title)}" data-stop-close>
+          <div class="sheet-head">
+            <div>
+              <p class="eyebrow">Fiche exercice</p>
+              <h2>${escapeHtml(sheet.title)}</h2>
+            </div>
+            <button type="button" class="icon-button" data-action="close-exercise" aria-label="Fermer">✕</button>
+          </div>
+          ${prescription ? `<p class="sheet-rx">${escapeHtml(prescription)}</p>` : ""}
+          <div class="sheet-body">
+            <div class="sheet-block">
+              <h3>Exécution</h3>
+              <p>${escapeHtml(sheet.exec.charAt(0).toUpperCase() + sheet.exec.slice(1))}</p>
+            </div>
+            ${
+              errors
+                ? `<div class="sheet-block warn">
+                    <h3>Erreurs à éviter</h3>
+                    <p>${escapeHtml(errors)}</p>
+                  </div>`
+                : ""
+            }
+            ${
+              sheet.videos.length
+                ? `<div class="sheet-videos">
+                    ${sheet.videos
+                      .map((video) => `<a class="secondary-button" href="${escapeHtml(video.url)}" target="_blank" rel="noopener">▶ ${escapeHtml(video.label)}</a>`)
+                      .join("")}
+                  </div>`
+                : ""
+            }
+            <p class="small-text">Progression : quand tu atteins le haut de la fourchette de reps sur toutes les séries au RPE cible, +2,5 kg (haut du corps) ou +5 kg (bas du corps) la séance suivante.</p>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
   const RUN_KINDS = { zone2: "Zone 2", fractionne: "Fractionné", longue: "Course longue", autre: "Autre" };
 
   function WorkoutLogCard() {
@@ -3933,14 +4470,40 @@
     `;
   }
 
+  function weekRangeLabel() {
+    const monday = mondayOfWeek();
+    const sunday = addDaysKey(monday, 6);
+    const range = `${formatShortDate(monday)} → ${formatShortDate(sunday)}`;
+    if (!programActive()) return `Semaine du ${range}`;
+    const week = programWeek();
+    return week === 0 ? `Semaine d'amorce · ${range}` : `Semaine ${week} sur ${BLOC1.totalWeeks} · ${range}`;
+  }
+
   function RealWeeklyCalendar() {
     const monday = mondayOfWeek();
     const todayId = dateKey();
     const rows = [];
     for (let i = 0; i < 7; i++) {
       const key = addDaysKey(monday, i);
+      const dayLabel = new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", "");
+      const dateLabel = new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }).replace(".", "");
+      const label = `${dayLabel}<span class="day-date">${escapeHtml(dateLabel)}</span>`;
+
+      // Avant le début du bloc (amorce comprise), il n'y a rien de prévu :
+      // afficher une séance du programme ces jours-là laissait croire à des séances manquées.
+      if (!programActive(key)) {
+        rows.push(`
+          <article class="day-card outside">
+            <div class="day-label">${label}</div>
+            <div><h3>Hors bloc</h3><p>${
+              key < programStartDate() ? "Rien n'était prévu ce jour-là." : "Bloc terminé."
+            }</p></div>
+          </article>
+        `);
+        continue;
+      }
+
       const session = programSessionFor(key);
-      const label = new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", "");
       let status = "Prévue";
       let tone = "info";
       if (session.kind === "repos") {
@@ -3964,7 +4527,7 @@
       const expanded = state.expandedProgramDay === weekday;
       rows.push(`
         <article class="day-card ${expanded ? "expanded" : ""}" data-action="toggle-program-day" data-day="${weekday}" role="button" tabindex="0" aria-expanded="${expanded}">
-          <div class="day-label">${escapeHtml(label)}</div>
+          <div class="day-label">${label}</div>
           <div><h3>${escapeHtml(session.title)}</h3><p>${escapeHtml(session.focus)}</p></div>
           <div class="day-side">${StatusBadge(status, tone)}<span class="day-chevron">${expanded ? "▾" : "▸"}</span></div>
         </article>
@@ -3974,9 +4537,7 @@
                 ${
                   session.exercises.length
                     ? `<div class="exercise-list">
-                        ${session.exercises
-                          .map((item) => `<div class="exercise-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.detail)}</span></div>`)
-                          .join("")}
+                        ${session.exercises.map((item) => ExerciseRow(item, "calendrier")).join("")}
                       </div>
                       <p class="small-text">Progression : quand tu atteins le haut de la fourchette de reps sur toutes les séries au RPE cible → +2,5 kg (haut du corps) ou +5 kg (bas du corps) la séance suivante.</p>
                       ${session.micro ? `<p class="small-text">Micro-sessions · ${escapeHtml(session.micro)}</p>` : ""}`
@@ -3993,7 +4554,12 @@
         <div class="card-head">
           <div>
             <p class="eyebrow">Calendrier hebdomadaire</p>
-            <h2>Semaine ${programActive() ? (programWeek() === 0 ? "d'amorce (23-26/07)" : `${programWeek()} sur ${BLOC1.totalWeeks}`) : "de préparation"}</h2>
+            <h2>${escapeHtml(weekRangeLabel())}</h2>
+            <p class="small-text">${
+              programActive() && programWeek() === 0
+                ? `L'amorce court du ${escapeHtml(formatShortDate(BLOC1.amorceStart))} au ${escapeHtml(formatShortDate(addDaysKey(programStartDate(), -1)))} : les jours d'avant sont hors bloc.`
+                : "Semaine du lundi au dimanche."
+            }</p>
           </div>
           ${StatusBadge(programPhase()?.label || "Avant-bloc", "info")}
         </div>
@@ -4812,6 +5378,7 @@
         </main>
         <nav class="mobile-nav" aria-label="Navigation mobile">${renderNav("mobile")}</nav>
         ${renderSettings()}
+        ${ExerciseSheetModal()}
       </div>
     `;
     app.onclick = handleClick;
@@ -4845,6 +5412,15 @@
     // Sécurité : si un champ est encore en cours de saisie au moment du clic,
     // on récupère sa valeur avant toute reconstruction du DOM.
     flushInputs();
+
+    // Fiche exercice : un appui en dehors de la carte referme, un appui dedans ne fait rien.
+    if (event.target.closest(".sheet-backdrop") && !event.target.closest(".sheet")) {
+      state.openExercise = null;
+      state.openExerciseDetail = "";
+      persistNow();
+      render();
+      return;
+    }
 
     const gotoButton = event.target.closest("[data-goto]");
     if (gotoButton) {
@@ -4884,6 +5460,14 @@
     if (!actionButton) return;
     const action = actionButton.dataset.action;
 
+    if (action === "open-exercise") {
+      state.openExercise = actionButton.dataset.exercise;
+      state.openExerciseDetail = actionButton.dataset.exerciseDetail || "";
+    }
+    if (action === "close-exercise") {
+      state.openExercise = null;
+      state.openExerciseDetail = "";
+    }
     if (action === "toggle-theme") {
       state.theme = state.theme === "dark" ? "light" : "dark";
     }
