@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "4.5.0";
+  const APP_VERSION = "4.6.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -594,6 +594,160 @@
 
     if (changed || force) persistNow();
     return changed;
+  }
+
+  // ---- Navigation directe vers ce qu'il reste à remplir (v4.6) ----
+  // Tout indicateur qui signale un manque devient un raccourci : un appui amène
+  // à la bonne vue, fait défiler jusqu'au bloc concerné et met le champ en évidence.
+
+  let pendingFocus = null;
+
+  function gotoTarget(spec, focusId) {
+    const [tab, view] = String(spec || "").split(":");
+    if (tab) state.activeTab = tab;
+    if (view) state.activeTodayView = view;
+    state.settingsOpen = false;
+    state.movePickerOpen = false;
+    pendingFocus = focusId || null;
+    persistNow();
+    render();
+  }
+
+  function applyPendingFocus() {
+    if (!pendingFocus) return;
+    const id = pendingFocus;
+    pendingFocus = null;
+    requestAnimationFrame(() => {
+      const field = document.getElementById(id);
+      if (!field) return;
+      const wrapper = field.closest(".field") || field;
+      // Centrer le champ plutôt que le haut de la carte : le sous-menu collant
+      // recouvrait sinon le titre, et le champ visé finissait en bas d'écran.
+      wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
+      wrapper.classList.add("field-flash");
+      setTimeout(() => wrapper.classList.remove("field-flash"), 1800);
+      // Le clavier iOS ne s'ouvre que pour les champs de saisie, pas pour un curseur.
+      if (field.type !== "range" && typeof field.focus === "function") {
+        field.focus({ preventScroll: true });
+      }
+    });
+  }
+
+  function missingItems() {
+    const items = [];
+    const session = programActive() ? programSessionFor() : null;
+    const hasSession = Boolean(session) && session.kind !== "repos";
+    const workouts = day().workouts || [];
+    const hour = new Date().getHours();
+
+    if (!morning().completed) {
+      items.push({
+        label: "Check-in du matin",
+        detail: "Fatigue, énergie, douleurs — 20 secondes",
+        view: "checkin",
+        focus: "fatigue",
+        tone: "watch",
+      });
+    }
+    if (!(Number(day().weight) > 0)) {
+      items.push({
+        label: "Poids du jour",
+        detail: "Facultatif, mais c'est lui qui construit la tendance",
+        view: "checkin",
+        focus: "weight",
+        tone: "info",
+      });
+    }
+    if (hasSession && !workouts.length) {
+      items.push({
+        label: "Séance non enregistrée",
+        detail: session.title,
+        view: "workout",
+        focus: null,
+        tone: "watch",
+      });
+    }
+    if (!evening().touched && hour >= 17) {
+      items.push({
+        label: "Bilan du soir",
+        detail: "Ce qui a vraiment été réalisé",
+        view: "evening",
+        focus: "completion",
+        tone: "watch",
+      });
+    }
+    if (!nutrition().touched && hour >= 17) {
+      items.push({
+        label: "Alimentation du jour",
+        detail: "Repas, protéines, ressenti",
+        view: "evening",
+        focus: "meals",
+        tone: "info",
+      });
+    }
+    if (!hasImportedHealth() && !hasTrainingData()) {
+      items.push({
+        label: "Données Apple Santé",
+        detail: "Sommeil, HRV, FC repos — import du fichier",
+        view: "data",
+        focus: null,
+        tone: "info",
+      });
+    }
+    return items;
+  }
+
+  // Badge cliquable : même rendu qu'un StatusBadge, mais il emmène au bon endroit.
+  function GotoBadge(label, tone, view, focusId) {
+    return `<button type="button" class="badge badge-link ${tone || ""}" data-goto="today:${view}"${
+      focusId ? ` data-goto-focus="${focusId}"` : ""
+    }>${escapeHtml(label)}</button>`;
+  }
+
+  function MissingCard() {
+    const items = missingItems();
+    if (!items.length) {
+      return `
+        <section class="card complete-card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Journée complète</p>
+              <h2>Rien à compléter</h2>
+            </div>
+            ${StatusBadge("À jour", "good")}
+          </div>
+          <p class="small-text">Check-in, séance et bilan sont renseignés. Le coach travaille avec des données complètes aujourd'hui.</p>
+        </section>
+      `;
+    }
+    return `
+      <section class="card missing-card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">À compléter aujourd'hui</p>
+            <h2>${items.length} élément${items.length > 1 ? "s" : ""} manquant${items.length > 1 ? "s" : ""}</h2>
+            <p class="small-text">Appuie sur une ligne : elle t'amène directement au champ à remplir.</p>
+          </div>
+        </div>
+        <div class="missing-list">
+          ${items
+            .map(
+              (item) => `
+              <button type="button" class="missing-row" data-goto="today:${item.view}"${
+                item.focus ? ` data-goto-focus="${item.focus}"` : ""
+              }>
+                <span class="missing-dot ${item.tone}"></span>
+                <span class="missing-text">
+                  <strong>${escapeHtml(item.label)}</strong>
+                  <span>${escapeHtml(item.detail)}</span>
+                </span>
+                <span class="missing-chevron" aria-hidden="true">›</span>
+              </button>`
+            )
+            .join("")}
+        </div>
+      </section>
+    `;
   }
 
   function hasTrainingData() {
@@ -2008,7 +2162,9 @@
         <div class="score-caption">
           <strong>${escapeHtml(label)}</strong>
           <span>${escapeHtml(trend)}</span>
-          <div class="badge-row">${ConfidenceBadge(confidence)}</div>
+          <div class="badge-row">${ConfidenceBadge(confidence)}${
+            morning().completed ? "" : GotoBadge("Compléter le check-in", "watch", "checkin", "fatigue")
+          }</div>
         </div>
       </section>
     `;
@@ -2078,6 +2234,13 @@
           ${ConfidenceBadge(decision.confidence)}
         </div>
         <p class="decision-copy">${escapeHtml(decision.reason)}</p>
+        ${(() => {
+          const next = missingItems()[0];
+          if (!next) return "";
+          return `<div class="button-row"><button type="button" class="primary-button" data-goto="today:${next.view}"${
+            next.focus ? ` data-goto-focus="${next.focus}"` : ""
+          }>${icon("check")}${escapeHtml(next.label)}</button></div>`;
+        })()}
         <div class="decision-meta">
           <div class="meta-tile"><span>Séance prévue</span><strong>${escapeHtml(decision.planned)}</strong></div>
           <div class="meta-tile"><span>Intensite</span><strong>${escapeHtml(decision.intensity)}</strong></div>
@@ -3193,7 +3356,16 @@
             <p class="eyebrow">Facteurs de récupération</p>
             <h2 class="section-title">Ce qui influence la recommandation</h2>
           </div>
-          ${StatusBadge(`${readiness.missing} donnée manquante`, readiness.missing ? "watch" : "good")}
+          ${
+            readiness.missing
+              ? GotoBadge(
+                  `${readiness.missing} donnée manquante${readiness.missing > 1 ? "s" : ""}`,
+                  "watch",
+                  morning().completed ? "data" : "checkin",
+                  morning().completed ? null : "fatigue"
+                )
+              : StatusBadge("Aucune donnée manquante", "good")
+          }
         </div>
         <div class="metric-grid">
           ${
@@ -3202,6 +3374,7 @@
               : `<div class="empty-state">
                   <strong>Aucun facteur objectif importé</strong>
                   <p>Sommeil, HRV, FC repos et charge apparaîtront après import Apple Santé, Garmin ou saisie d’un historique.</p>
+                  <button type="button" class="secondary-button" data-goto="today:data">Importer mes données santé</button>
                 </div>`
           }
         </div>
@@ -3221,6 +3394,7 @@
       summary: `
         <div class="today-grid">
           <div class="page-grid">
+            ${MissingCard()}
             ${CoachDecisionCard(decision)}
             ${DeloadCard(signalsResult)}
             ${factors}
@@ -4221,6 +4395,7 @@
       if (messages) messages.scrollTop = messages.scrollHeight;
     });
     maybeAnimateDonuts();
+    applyPendingFocus();
   }
 
   let lastViewSignature = "";
@@ -4242,6 +4417,12 @@
     // Sécurité : si un champ est encore en cours de saisie au moment du clic,
     // on récupère sa valeur avant toute reconstruction du DOM.
     flushInputs();
+
+    const gotoButton = event.target.closest("[data-goto]");
+    if (gotoButton) {
+      gotoTarget(gotoButton.dataset.goto, gotoButton.dataset.gotoFocus);
+      return;
+    }
 
     const todayViewButton = event.target.closest("[data-today-view]");
     if (todayViewButton) {
