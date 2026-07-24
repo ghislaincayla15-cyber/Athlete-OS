@@ -2332,3 +2332,252 @@ button,
   padding: 12px 16px;
   align-items: center;
 }
+
+/* ---- v5.1 : anneaux, jauges, lecture en clair ---- */
+
+.rings-card {
+  padding-top: 20px;
+}
+
+.rings-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.ring-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+
+.ring-item.tappable {
+  cursor: pointer;
+  border-radius: 16px;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.ring-item.tappable:active {
+  transform: scale(0.97);
+}
+
+.ring-item.tappable:hover {
+  background: var(--surface-muted);
+}
+
+.ring {
+  --score: 0;
+  --accent: var(--green);
+  position: relative;
+  display: grid;
+  width: 100%;
+  max-width: 96px;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, var(--surface) 0 66%, transparent 67%),
+    conic-gradient(var(--accent) calc(var(--score) * 1%), rgba(255, 255, 255, 0.08) 0);
+  transition: --score 760ms cubic-bezier(0.22, 0.9, 0.35, 1);
+}
+
+body.light .ring {
+  background:
+    radial-gradient(circle, var(--surface) 0 66%, transparent 67%),
+    conic-gradient(var(--accent) calc(var(--score) * 1%), rgba(20, 22, 26, 0.09) 0);
+}
+
+.ring-value {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+}
+
+.ring-value strong {
+  font-size: 1.5rem;
+  font-weight: 850;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-value span {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.ring-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ring-caption strong {
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.ring-caption span {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.coach-line {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+}
+
+.coach-line-tag {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.coach-line p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+/* Tuiles avec jauge de position */
+.gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.gauge-tile {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-muted);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  min-height: 118px;
+}
+
+.gauge-tile.tappable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.gauge-tile.tappable:active {
+  transform: scale(0.985);
+}
+
+.gauge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.gauge-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.gauge-value {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.gauge-value strong {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge-value span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.gauge-status {
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: var(--subtle);
+}
+
+.gauge-status.good { color: var(--green); }
+.gauge-status.watch { color: var(--orange); }
+.gauge-status.bad { color: var(--red); }
+
+.gauge-hint {
+  font-size: 0.66rem;
+  color: var(--subtle);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+
+.gauge-track {
+  position: relative;
+  width: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: visible;
+}
+
+/* Bande verte = plage visée pour cette métrique précise. */
+.gauge-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--from, 40%);
+  height: calc(var(--to, 70%) - var(--from, 40%));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--green) 42%, transparent);
+}
+
+.gauge-track.empty {
+  background: var(--border);
+}
+
+.gauge-dot {
+  position: absolute;
+  left: 50%;
+  bottom: var(--pos, 50%);
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-bottom: -7px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 3px solid var(--green);
+  box-shadow: 0 0 0 2px var(--surface-muted);
+}
+
+.gauge-track.watch .gauge-dot { border-color: var(--orange); }
+.gauge-track.bad .gauge-dot { border-color: var(--red); }
+
+@media (max-width: 380px) {
+  .gauge-grid { grid-template-columns: 1fr; }
+}

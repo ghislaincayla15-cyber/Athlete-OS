@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.0.0";
+  const APP_VERSION = "5.1.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -2247,6 +2247,293 @@
     `;
   }
 
+  // ---- v5.1 : lecture visuelle des données ----
+  // Grammaire inspirée des apps de suivi grand public : un anneau par grande dimension,
+  // une jauge de position dans la plage normale par métrique, une phrase en clair.
+
+  function Ring({ value, label, sub, accent, empty = false, goto: target, focus }) {
+    const inner = empty
+      ? `<div class="ring-value"><strong>—</strong></div>`
+      : `<div class="ring-value"><strong>${value}</strong><span>%</span></div>`;
+    const body = `
+      <div class="ring" style="--score:${empty ? 0 : clamp(value, 0, 100)}; --accent:${empty ? "var(--subtle)" : accent}">${inner}</div>
+      <div class="ring-caption">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(sub)}</span>
+      </div>
+    `;
+    if (!target) return `<div class="ring-item">${body}</div>`;
+    return `<button type="button" class="ring-item tappable" data-goto="${target}"${focus ? ` data-goto-focus="${focus}"` : ""}>${body}</button>`;
+  }
+
+  // Charge de la semaine : séances réalisées (journal ou import) sur séances prévues par le bloc.
+  function weekSessionLoad() {
+    const monday = mondayOfWeek();
+    let planned = 0;
+    let done = 0;
+    for (let i = 0; i < 7; i++) {
+      const key = addDaysKey(monday, i);
+      if (key > dateKey()) break;
+      if (!programActive(key)) continue;
+      const session = programSessionFor(key);
+      if (!session || session.kind === "repos") continue;
+      planned += 1;
+      const entry = journalEntry(key);
+      const logged = (entry?.workouts || []).length > 0 || (entry?.activities || []).some((activity) => !activity.neat);
+      const completion = entry?.evening?.touched ? entry.evening.completion : null;
+      if (logged || completion === "complete" || completion === "adaptee") done += 1;
+    }
+    return { planned, done, pct: planned ? Math.round((done / planned) * 100) : null };
+  }
+
+  function sleepScoreToday() {
+    const health = state.imports?.health;
+    if (health?.sleepMinutes) return { score: scoreSleepMinutes(health.sleepMinutes), sub: formatMinutes(rounded(health.sleepMinutes)) };
+    return null;
+  }
+
+  function RingsRow(readiness) {
+    const load = weekSessionLoad();
+    const sleep = sleepScoreToday();
+    return `
+      <section class="card rings-card">
+        <div class="rings-row">
+          ${Ring({
+            value: readiness.score,
+            label: "Récupération",
+            sub: readiness.empty ? "Check-in à faire" : readiness.category,
+            accent: readiness.accent,
+            empty: readiness.empty,
+            goto: readiness.empty ? "today:checkin" : null,
+            focus: readiness.empty ? "fatigue" : null,
+          })}
+          ${Ring({
+            value: load.pct ?? 0,
+            label: "Séances",
+            sub: load.planned ? `${load.done} sur ${load.planned} cette semaine` : "Aucune prévue à ce stade",
+            accent: "var(--indigo)",
+            empty: load.pct === null,
+            goto: load.pct === null ? null : "today:workout",
+          })}
+          ${Ring({
+            value: sleep?.score ?? 0,
+            label: "Sommeil",
+            sub: sleep ? sleep.sub : "Importer Apple Santé",
+            accent: "var(--blue, var(--indigo))",
+            empty: !sleep,
+            goto: sleep ? null : "today:data",
+          })}
+        </div>
+        <div class="coach-line">
+          <span class="coach-line-tag">Ce que j'en lis</span>
+          <p>${escapeHtml(coachSentence(readiness, load, sleep))}</p>
+        </div>
+      </section>
+    `;
+  }
+
+  // Une phrase, en langage courant, qui dit l'essentiel du jour.
+  function coachSentence(readiness, load, sleep) {
+    if (readiness.empty) {
+      return "Je n'ai encore rien sur toi aujourd'hui. Vingt secondes de check-in et je peux te dire si la séance prévue tient la route ou s'il faut l'alléger.";
+    }
+    const parts = [];
+    if (readiness.score >= 78) parts.push("Ta récupération est bonne aujourd'hui : la séance prévue peut se faire comme écrit.");
+    else if (readiness.score >= 62) parts.push("Récupération correcte sans plus : garde le plan mais reste deux répétitions en réserve.");
+    else parts.push("Récupération basse : allège plutôt que de forcer, tu ne perdras rien sur dix semaines.");
+
+    if (!sleep) parts.push("Il me manque ton sommeil et ta HRV — sans eux je travaille en confiance réduite.");
+    else if (sleep.score < 60) parts.push("Nuit courte : c'est le premier levier à corriger avant d'ajouter de la charge.");
+
+    if (load.planned && load.pct !== null && load.pct < 60) parts.push(`Semaine en retard sur le plan : ${load.done} séance(s) sur ${load.planned}.`);
+    return parts.join(" ");
+  }
+
+  // Jauge de position dans une plage, comme un thermomètre : on voit d'un coup si on est dedans.
+  function GaugeTile({ label, value, unit, hint, position, tone = "good", status, band, target: gotoTarget, focus }) {
+    const empty = position === null || position === undefined;
+    const inner = `
+      <div class="gauge-text">
+        <span class="gauge-label">${escapeHtml(label)}</span>
+        <div class="gauge-value"><strong>${escapeHtml(String(value))}</strong>${unit ? `<span>${escapeHtml(unit)}</span>` : ""}</div>
+        <span class="gauge-status ${empty ? "" : tone}">${escapeHtml(status)}</span>
+        ${hint ? `<span class="gauge-hint">${escapeHtml(hint)}</span>` : ""}
+      </div>
+      <div class="gauge-track ${empty ? "empty" : tone}">
+        ${band && !empty ? `<span class="gauge-band" style="--from:${band[0]}%; --to:${band[1]}%"></span>` : ""}
+        ${empty ? "" : `<span class="gauge-dot" style="--pos:${clamp(position, 3, 97)}%"></span>`}
+      </div>
+    `;
+    if (!gotoTarget) return `<article class="gauge-tile">${inner}</article>`;
+    return `<button type="button" class="gauge-tile tappable" data-goto="${gotoTarget}"${focus ? ` data-goto-focus="${focus}"` : ""}>${inner}</button>`;
+  }
+
+  function positionIn(value, min, max) {
+    if (!Number.isFinite(value)) return null;
+    return clamp(((value - min) / (max - min)) * 100, 0, 100);
+  }
+
+  function GaugeGrid() {
+    const health = state.imports?.health;
+    const weight = weightSummary();
+    const walk = walkStats(7);
+    const tiles = [];
+
+    // FC de repos : plus c'est bas, mieux c'est — plage usuelle 45-75 bpm.
+    if (health?.rhr) {
+      const rhr = rounded(health.rhr);
+      tiles.push(
+        GaugeTile({
+          label: "FC de repos",
+          value: rhr,
+          unit: "bpm",
+          position: positionIn(rhr, 40, 80),
+          band: [positionIn(45, 40, 80), positionIn(70, 40, 80)],
+          tone: rhr <= 62 ? "good" : rhr <= 70 ? "watch" : "bad",
+          status: rhr <= 62 ? "Bonne" : rhr <= 70 ? "Correcte" : "Élevée",
+          hint: "Plage usuelle 45-70",
+        })
+      );
+    } else {
+      tiles.push(
+        GaugeTile({ label: "FC de repos", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", target: "today:data" })
+      );
+    }
+
+    if (health?.hrvMs) {
+      const hrv = rounded(health.hrvMs);
+      tiles.push(
+        GaugeTile({
+          label: "HRV",
+          value: hrv,
+          unit: "ms",
+          position: positionIn(hrv, 20, 100),
+          band: [positionIn(40, 20, 100), 100],
+          tone: hrv >= 55 ? "good" : hrv >= 40 ? "watch" : "bad",
+          status: hrv >= 55 ? "Bonne" : hrv >= 40 ? "Moyenne" : "Basse",
+          hint: "Se lit en tendance, pas en absolu",
+        })
+      );
+    } else {
+      tiles.push(GaugeTile({ label: "HRV", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", target: "today:data" }));
+    }
+
+    if (health?.sleepMinutes) {
+      const minutes = rounded(health.sleepMinutes);
+      tiles.push(
+        GaugeTile({
+          label: "Sommeil",
+          value: formatMinutes(minutes),
+          unit: "",
+          position: positionIn(minutes, 240, 600),
+          band: [positionIn(420, 240, 600), positionIn(510, 240, 600)],
+          tone: minutes >= 420 ? "good" : minutes >= 360 ? "watch" : "bad",
+          status: minutes >= 420 ? "Suffisant" : minutes >= 360 ? "Juste" : "Court",
+          hint: "Cible 7 h à 8 h 30",
+        })
+      );
+    } else {
+      tiles.push(GaugeTile({ label: "Sommeil", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", target: "today:data" }));
+    }
+
+    // Poids : pas de « plage normale », c'est la pente qui compte.
+    if (weight.avg7 !== null) {
+      const delta = weight.delta;
+      tiles.push(
+        GaugeTile({
+          label: "Poids (moy. 7 j)",
+          value: String(weight.avg7).replace(".", ","),
+          unit: "kg",
+          position: delta === null ? 50 : clamp(50 - delta * 40, 5, 95),
+          band: [60, 70],
+          tone: delta === null ? "watch" : delta <= -0.6 ? "watch" : delta <= -0.1 ? "good" : delta <= 0.1 ? "watch" : "bad",
+          status:
+            delta === null
+              ? "Première semaine"
+              : delta <= -0.6
+                ? "Baisse rapide"
+                : delta <= -0.1
+                  ? "Bonne pente"
+                  : delta <= 0.1
+                    ? "Stable"
+                    : "En hausse",
+          hint: "Cible −0,25 à −0,5 kg/semaine",
+          target: "today:checkin",
+          focus: "weight",
+        })
+      );
+    } else {
+      tiles.push(
+        GaugeTile({ label: "Poids (moy. 7 j)", value: "—", unit: "", position: null, status: "À saisir", hint: "10 secondes le matin", target: "today:checkin", focus: "weight" })
+      );
+    }
+
+    // Marche : dépense de fond, cible 30 min/jour.
+    const perDay = walk.outings ? Math.round(walk.minutes / 7) : null;
+    tiles.push(
+      perDay === null
+        ? GaugeTile({ label: "Marche (moy./jour)", value: "—", unit: "", position: null, status: "À importer", hint: "Activités Garmin", target: "today:data" })
+        : GaugeTile({
+            label: "Marche (moy./jour)",
+            value: perDay,
+            unit: "min",
+            position: positionIn(perDay, 0, 60),
+            band: [positionIn(30, 0, 60), 100],
+            tone: perDay >= 30 ? "good" : perDay >= 15 ? "watch" : "bad",
+            status: perDay >= 30 ? "Bon volume" : perDay >= 15 ? "À augmenter" : "Faible",
+            hint: "Cible 30 min/jour",
+            target: "today:data",
+          })
+    );
+
+    // Tour de taille : juge de paix de la recomposition.
+    const waist = lastWaist();
+    tiles.push(
+      waist
+        ? GaugeTile({
+            label: "Tour de taille",
+            value: String(waist.value).replace(".", ","),
+            unit: "cm",
+            position: waistDue() ? 88 : 50,
+            band: [35, 65],
+            tone: waistDue() ? "watch" : "good",
+            status: waistDue() ? "À remesurer" : "À jour",
+            hint: `Mesuré le ${formatShortDate(waist.key)}`,
+            target: "today:checkin",
+            focus: "waist",
+          })
+        : GaugeTile({ label: "Tour de taille", value: "—", unit: "", position: null, status: "À mesurer", hint: "Référence de départ", target: "today:checkin", focus: "waist" })
+    );
+
+    return `
+      <section class="card">
+        <div class="card-head card-head--save">
+          <div>
+            <p class="eyebrow">Tes indicateurs</p>
+            <h2>Où tu en es aujourd'hui</h2>
+          </div>
+          ${
+            readinessMissingCount()
+              ? GotoBadge(`${readinessMissingCount()} donnée manquante${readinessMissingCount() > 1 ? "s" : ""}`, "watch", morning().completed ? "data" : "checkin", morning().completed ? null : "fatigue")
+              : StatusBadge("Complet", "good")
+          }
+        </div>
+        <div class="gauge-grid">${tiles.join("")}</div>
+        <p class="small-text">Le repère à droite de chaque tuile montre où tu te situes dans la plage habituelle. Touche une tuile grise pour aller renseigner la donnée.</p>
+      </section>
+    `;
+  }
+
+  function readinessMissingCount() {
+    const health = state.imports?.health;
+    let missing = 0;
+    if (!health?.hrvMs) missing += 1;
+    if (!health?.sleepMinutes) missing += 1;
+    if (!health?.rhr) missing += 1;
+    if (!morning().completed) missing += 1;
+    return missing;
+  }
+
   function MetricCard(metric) {
     const tone = metric.score >= 72 ? "good" : metric.score >= 56 ? "watch" : "bad";
     return `
@@ -4298,14 +4585,15 @@
       summary: `
         <div class="today-grid">
           <div class="page-grid">
+            ${RingsRow(readiness)}
             ${MissingCard()}
+            ${GaugeGrid()}
             ${CoachDecisionCard(decision)}
             ${DeloadCard(signalsResult)}
-            ${factors}
           </div>
           <aside class="page-grid">
-            ${score}
             ${SignalsCard(signalsResult)}
+            ${factors}
             ${CoachSummary(decision, readiness)}
           </aside>
         </div>
