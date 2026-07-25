@@ -2756,3 +2756,108 @@ body.light .ring {
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* ---- v5.5 : séance en cours ---- */
+
+.live-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--green) 45%, var(--border));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--green) 12%, var(--surface-muted));
+}
+
+.live-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.live-tag {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.live-info strong {
+  font-size: 1.5rem;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-info span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.live-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.exercise-row.live {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.exercise-row.live .ex-check {
+  flex: 0 0 auto;
+  width: 44px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  color: var(--green);
+  font-size: 1.1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.exercise-row.live .ex-check:active {
+  transform: scale(0.94);
+}
+
+.exercise-row.live .ex-check.done {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 22%, var(--surface));
+}
+
+.exercise-row.live .ex-open {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.exercise-row.live.done .ex-open {
+  opacity: 0.55;
+}
+
+.exercise-row.live.done .exercise-main strong {
+  text-decoration: line-through;
+}

@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.4.0";
+  const APP_VERSION = "5.5.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -124,6 +124,8 @@
     decisionLabel: "",
     decisionTone: "",
     workoutStarted: false,
+    workoutStartedAt: null, // horodatage de début (séance en cours)
+    exercisesDone: [], // noms des exercices cochés pendant la séance
     adaptationPending: false,
     adaptationConfirmed: false,
     morning: {
@@ -239,6 +241,7 @@
       ...entry,
       workouts: Array.isArray(entry.workouts) ? entry.workouts : [],
       activities: Array.isArray(entry.activities) ? entry.activities : [],
+      exercisesDone: Array.isArray(entry.exercisesDone) ? entry.exercisesDone : [],
       morning: { ...base.morning, ...(entry.morning || {}) },
       evening: { ...base.evening, ...(entry.evening || {}) },
       nutrition: { ...base.nutrition, ...(entry.nutrition || {}) },
@@ -2699,7 +2702,7 @@
               <h2 class="workout-title">${escapeHtml(session.title)}</h2>
               <p class="workout-subtitle">${escapeHtml(session.focus)}</p>
             </div>
-            ${StatusBadge(day().workoutStarted ? "En cours" : session.kind === "repos" ? "Repos" : "Prévue", day().workoutStarted ? "info" : decision.tone)}
+            ${StatusBadge(day().workoutStartedAt ? "En cours" : session.kind === "repos" ? "Repos" : "Prévue", day().workoutStartedAt ? "good" : decision.tone)}
           </div>
           <div class="stat-grid">
             <div class="stat-tile"><span>Semaine</span><strong>${week === 0 ? "Amorce" : `${week} / ${BLOC1.totalWeeks}`}</strong></div>
@@ -2707,12 +2710,17 @@
             <div class="stat-tile"><span>RPE cible</span><strong>${escapeHtml(isDeloadWeek && session.kind !== "repos" ? "≤ 6 (deload)" : session.rpe)}</strong></div>
             <div class="stat-tile"><span>Phase</span><strong>${escapeHtml(programPhase(week)?.label || "—")}</strong></div>
           </div>
+          ${day().workoutStartedAt ? LiveWorkoutBanner(session) : ""}
           ${
             session.exercises.length
               ? `<div class="exercise-list">
-                  ${session.exercises.map((item) => ExerciseRow(item, "session")).join("")}
+                  ${session.exercises.map((item) => (day().workoutStartedAt ? LiveExerciseRow(item) : ExerciseRow(item, "session"))).join("")}
                 </div>
-                <p class="small-text">Touche un exercice pour la fiche : exécution, erreurs à éviter et vidéo.</p>`
+                <p class="small-text">${
+                  day().workoutStartedAt
+                    ? "Coche chaque exercice terminé. Le rond à gauche coche, le reste de la ligne ouvre la fiche."
+                    : "Touche un exercice pour la fiche : exécution, erreurs à éviter et vidéo."
+                }</p>`
               : ""
           }
           ${session.micro ? `<p class="small-text">Micro-sessions du jour · ${escapeHtml(session.micro)}</p>` : ""}
@@ -2731,7 +2739,11 @@
           ${
             session.kind !== "repos"
               ? `<div class="button-row">
-                  <button type="button" class="primary-button" data-action="start-workout">${icon("play")}Démarrer la séance</button>
+                  ${
+                    day().workoutStartedAt
+                      ? ""
+                      : `<button type="button" class="primary-button" data-action="start-workout">${icon("play")}Démarrer la séance</button>`
+                  }
                   <button type="button" class="secondary-button" data-action="request-adaptation">${icon("tune")}Adapter la séance</button>
                   <button type="button" class="secondary-button" data-action="open-move-session">Déplacer</button>
                   <a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a>
@@ -4122,6 +4134,81 @@
         </span>
         <span class="exercise-cue">Comment faire ›</span>
       </button>
+    `;
+  }
+
+  let liveTimerId = null;
+
+  // Le chrono se met à jour tout seul sans reconstruire l'écran.
+  function syncLiveTimer() {
+    const node = document.querySelector("[data-live-timer]");
+    if (!node) {
+      if (liveTimerId) {
+        clearInterval(liveTimerId);
+        liveTimerId = null;
+      }
+      return;
+    }
+    if (liveTimerId) return;
+    liveTimerId = setInterval(() => {
+      const target = document.querySelector("[data-live-timer]");
+      if (!target) {
+        clearInterval(liveTimerId);
+        liveTimerId = null;
+        return;
+      }
+      target.textContent = `${liveWorkoutMinutes()} min`;
+    }, 20000);
+  }
+
+  function liveWorkoutMinutes() {
+    const started = day().workoutStartedAt;
+    if (!started) return 0;
+    const startedAt = new Date(started).getTime();
+    if (Number.isNaN(startedAt)) return 0;
+    return Math.max(0, Math.round((Date.now() - startedAt) / 60000));
+  }
+
+  function isExerciseDone(name) {
+    return (day().exercisesDone || []).includes(name);
+  }
+
+  // En séance : chaque exercice se coche d'un appui, et reste ouvrable pour sa fiche.
+  function LiveExerciseRow(item) {
+    const done = isExerciseDone(item.name);
+    const hasSheet = Boolean(exerciseSheet(item.name));
+    return `
+      <div class="exercise-row live ${done ? "done" : ""}">
+        <button type="button" class="ex-check ${done ? "done" : ""}" data-action="toggle-exercise-done" data-name="${escapeHtml(item.name)}" aria-pressed="${done}" aria-label="${done ? "Décocher" : "Cocher"} ${escapeHtml(item.name)}">
+          ${done ? "✓" : ""}
+        </button>
+        <button type="button" class="ex-open" ${hasSheet ? `data-action="open-exercise" data-exercise="${escapeHtml(item.name)}" data-exercise-detail="${escapeHtml(item.detail || "")}"` : "disabled"}>
+          <span class="exercise-main">
+            <strong>${escapeHtml(item.name)}</strong>
+            <span>${escapeHtml(item.detail || "")}</span>
+          </span>
+          ${hasSheet ? `<span class="exercise-cue">Fiche ›</span>` : ""}
+        </button>
+      </div>
+    `;
+  }
+
+  function LiveWorkoutBanner(session) {
+    const minutes = liveWorkoutMinutes();
+    const total = (session.exercises || []).length;
+    const done = (session.exercises || []).filter((item) => isExerciseDone(item.name)).length;
+    return `
+      <div class="live-banner">
+        <div class="live-info">
+          <span class="live-tag">Séance en cours</span>
+          <strong data-live-timer>${minutes} min</strong>
+          ${total ? `<span>${done} exercice${done > 1 ? "s" : ""} sur ${total}</span>` : ""}
+        </div>
+        <div class="live-actions">
+          <button type="button" class="primary-button" data-action="finish-workout">Terminer</button>
+          <button type="button" class="ghost-button" data-action="cancel-workout">Annuler</button>
+        </div>
+      </div>
     `;
   }
 
@@ -5761,6 +5848,7 @@
     });
     maybeAnimateDonuts();
     applyPendingFocus();
+    syncLiveTimer();
   }
 
   let lastViewSignature = "";
@@ -5880,8 +5968,50 @@
     }
     if (action === "start-workout") {
       day().workoutStarted = true;
+      day().workoutStartedAt = new Date().toISOString();
+      day().exercisesDone = [];
+      state.activeTab = "today";
+      state.activeTodayView = "workout";
       addCoachMessage("user", "Je démarre la séance.");
-      addCoachMessage("coach", "Parfait. Garde le RPE cible, filme une série lourde si possible, et stoppe si une douleur augmente.");
+      addCoachMessage("coach", "C'est parti. Coche chaque exercice terminé, garde le RPE cible et arrête un mouvement si une douleur monte au-delà de 3/10.");
+    }
+    if (action === "toggle-exercise-done") {
+      const name = actionButton.dataset.name;
+      const list = day().exercisesDone || [];
+      day().exercisesDone = list.includes(name) ? list.filter((item) => item !== name) : [...list, name];
+    }
+    if (action === "cancel-workout") {
+      day().workoutStartedAt = null;
+      day().workoutStarted = false;
+      addCoachMessage("coach", "Séance annulée, rien n'a été enregistré. Tu peux la relancer ou la déplacer sur un autre jour.");
+    }
+    if (action === "finish-workout") {
+      const minutes = liveWorkoutMinutes();
+      const session = programActive() ? programSessionFor() : null;
+      const total = session?.exercises?.length || 0;
+      const done = (session?.exercises || []).filter((item) => isExerciseDone(item.name)).length;
+      const completion = total && done < total ? (done >= Math.ceil(total / 2) ? "adaptee" : "partial") : "complete";
+      day().workoutStartedAt = null;
+      day().workoutStarted = false;
+      day().evening = {
+        ...day().evening,
+        touched: true,
+        completion,
+        duration: minutes > 0 ? minutes : day().evening.duration,
+      };
+      logDecision(
+        "adherence",
+        `Séance terminée : ${labelFor("completion", completion).toLowerCase()}`,
+        `${done}/${total || "—"} exercice(s), ${minutes} min`,
+        "Séance suivie dans l'app",
+        "Eleve"
+      );
+      addCoachMessage(
+        "coach",
+        `Séance terminée en ${minutes} min${total ? `, ${done} exercice(s) sur ${total}` : ""}. C'est enregistré comme « ${labelFor("completion", completion).toLowerCase()} ». Il ne me manque que ton RPE et l'état du mollet au bilan du soir.`
+      );
+      state.activeTodayView = "evening";
+      pendingFocus = "rpe";
     }
     if (action === "request-adaptation") {
       day().adaptationPending = true;
