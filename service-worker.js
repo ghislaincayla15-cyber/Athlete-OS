@@ -1,4 +1,4 @@
-const CACHE_NAME = "athlete-os-cache-v23";
+const CACHE_NAME = "athlete-os-cache-v24";
 const APP_SHELL = [
   "./",
   "./index.html",

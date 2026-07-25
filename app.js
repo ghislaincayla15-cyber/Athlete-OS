@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.7.0";
+  const APP_VERSION = "5.7.1";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -6807,7 +6807,43 @@
         week.pct !== null ? `${week.pct} % (${week.denom} séance(s) évaluée(s))` : "aucun bilan complété"
       }. Priorité : régularité, RPE stable, et le mollet qui reste silencieux.`;
     }
-    return `${decision.label}. Je base la recommandation sur tes tendances personnelles, pas sur un indicateur isolé. Priorité : exécution propre, douleur surveillée, bilan du soir complété.`;
+    if (
+      lower.includes("me place") ||
+      lower.includes("par rapport") ||
+      lower.includes("compar") ||
+      lower.includes("norme") ||
+      lower.includes("moyenne") ||
+      lower.includes("mon âge") ||
+      lower.includes("mon age") ||
+      lower.includes("mon niveau") ||
+      /\b(2[0-9]|3[0-9])\s*ans?\b/.test(lower) ||
+      lower.includes("mes chiffres") ||
+      lower.includes("population") ||
+      lower.includes("mes stats")
+    ) {
+      const health = state.imports?.health;
+      const bits = [];
+      if (health?.rhr) {
+        const rhr = rounded(health.rhr);
+        bits.push(`ta FC de repos est de ${rhr} bpm (repères adulte : sous 60 = bien entraîné, 60-70 = normal, au-dessus de 75 = à surveiller)`);
+      }
+      if (health?.vo2) {
+        const vo2 = rounded(health.vo2);
+        bits.push(`ta VO2max estimée est de ${vo2} (repères homme ~30 ans : au-dessus de 52 = supérieur, 46-52 = bon, 40-45 = moyen)`);
+      }
+      if (health?.hrvMs) {
+        bits.push(`ta HRV tourne autour de ${rounded(health.hrvMs)} ms — elle est trop individuelle pour se comparer entre personnes, elle se lit en tendance sur toi`);
+      }
+      const intro =
+        "Franchement, la meilleure référence à ton âge, c'est toi il y a un mois — pas une moyenne de population. L'app est construite là-dessus : je compare tes chiffres à tes propres tendances, jamais à une norme statistique.";
+      if (bits.length) {
+        return `${intro} Cela dit, pour situer ce que tu as importé : ${bits.join(" ; ")}. Ces repères sont des ordres de grandeur, pas des verdicts : le sens de la pente sur plusieurs semaines compte plus que la valeur d'un jour.`;
+      }
+      return `${intro} Je n'ai pas encore tes marqueurs objectifs (FC de repos, VO2max, HRV) : importe ton export Apple Santé et je pourrai te situer par rapport aux repères d'âge, en plus de ta propre évolution.`;
+    }
+
+    // Question non reconnue : ne pas donner une réponse générique qui semble éluder.
+    return `Je ne suis pas sûr d'avoir saisi ta question. Je réponds surtout sur : ta récupération, ta séance, ton poids, ta progression, un éventuel deload, et ta semaine de bloc — les boutons « Questions utiles » à gauche couvrent l'essentiel. Reformule et je m'aligne.`;
   }
 
   // ---- Ouverture sur le bon moment de la journée (v4.8) ----
