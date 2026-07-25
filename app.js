@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.7.1";
+  const APP_VERSION = "5.7.2";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -2597,23 +2597,43 @@
       );
     }
 
-    // Marche : dépense de fond, cible 30 min/jour.
-    const perDay = walk.outings ? Math.round(walk.minutes / 7) : null;
-    tiles.push(
-      perDay === null
-        ? GaugeTile({ label: "Marche (moy./jour)", value: "—", unit: "", position: null, status: "À importer", hint: "Activités Garmin", target: "today:data" })
-        : GaugeTile({
-            label: "Marche (moy./jour)",
-            value: perDay,
-            unit: "min",
-            position: positionIn(perDay, 0, 60),
-            band: [positionIn(30, 0, 60), 100],
-            tone: perDay >= 30 ? "good" : perDay >= 15 ? "watch" : "bad",
-            status: perDay >= 30 ? "Bon volume" : perDay >= 15 ? "À augmenter" : "Faible",
-            hint: "Cible 30 min/jour",
-            target: "today:data",
-          })
-    );
+    // Dépense de fond : on privilégie les pas d'Apple Santé (toute la marche du
+    // jour, pas seulement les sorties trackées), puis les minutes de marche Garmin.
+    const steps = health?.stepsAvg ?? health?.steps ?? null;
+    const perDayMin = walk.outings ? Math.round(walk.minutes / 7) : null;
+    if (steps !== null) {
+      tiles.push(
+        GaugeTile({
+          label: health?.stepsAvg ? "Pas (moy./jour)" : "Pas (dernier jour)",
+          value: steps.toLocaleString("fr-FR"),
+          unit: "pas",
+          position: positionIn(steps, 0, 12000),
+          band: [positionIn(8000, 0, 12000), 100],
+          tone: steps >= 8000 ? "good" : steps >= 5000 ? "watch" : "bad",
+          status: steps >= 8000 ? "Bon volume" : steps >= 5000 ? "À augmenter" : "Sédentaire",
+          hint: "Cible 8 000 à 10 000/jour",
+          target: "today:data",
+        })
+      );
+    } else if (perDayMin !== null) {
+      tiles.push(
+        GaugeTile({
+          label: "Marche (moy./jour)",
+          value: perDayMin,
+          unit: "min",
+          position: positionIn(perDayMin, 0, 60),
+          band: [positionIn(30, 0, 60), 100],
+          tone: perDayMin >= 30 ? "good" : perDayMin >= 15 ? "watch" : "bad",
+          status: perDayMin >= 30 ? "Bon volume" : perDayMin >= 15 ? "À augmenter" : "Faible",
+          hint: "Cible 30 min/jour · marches Garmin",
+          target: "today:data",
+        })
+      );
+    } else {
+      tiles.push(
+        GaugeTile({ label: "Marche / pas", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé ou Garmin", target: "today:data" })
+      );
+    }
 
     // Tour de taille : juge de paix de la recomposition.
     const waist = lastWaist();
@@ -3742,6 +3762,13 @@
     const steps = latestFromMap(dailySteps);
     const distance = latestFromMap(dailyDistance);
     const sleep = latestFromMap(dailySleep);
+    // Moyenne des pas sur les 7 derniers jours disponibles (dépense de fond réelle).
+    const stepsAvg = (() => {
+      const days = [...dailySteps.keys()].sort().slice(-7);
+      const values = days.map((day) => dailySteps.get(day)).filter((v) => Number.isFinite(v) && v > 0);
+      if (!values.length) return null;
+      return Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
+    })();
 
     return {
       source: "Apple Santé",
@@ -3753,6 +3780,7 @@
       hrvMs: latest.hrv?.value || null,
       vo2: latest.vo2?.value || null,
       steps: steps?.value || null,
+      stepsAvg: stepsAvg,
       distanceKm: distance?.value || null,
       sleepMinutes: sleep?.value || null,
       dailyWeights,
