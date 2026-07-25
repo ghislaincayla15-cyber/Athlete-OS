@@ -2861,3 +2861,40 @@ body.light .ring {
 .exercise-row.live.done .exercise-main strong {
   text-decoration: line-through;
 }
+
+/* ---- v5.6 : météo ---- */
+
+.weather-window {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+}
+
+.weather-window strong {
+  font-size: 0.92rem;
+}
+
+.weather-window span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.weather-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.weather-notes p {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid color-mix(in srgb, var(--green) 50%, transparent);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}

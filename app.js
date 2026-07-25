@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.5.0";
+  const APP_VERSION = "5.6.0";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -214,6 +214,7 @@
       error: "",
       progress: 0,
     },
+    weather: null, // { lat, lon, place, day, fetchedAt, hours: [...] }
   };
 
   // ---- Journal : une entrée par date locale (YYYY-MM-DD) ----
@@ -1220,17 +1221,23 @@
     const durationWeek = sum(week, (r) => r.workout.duration);
     const hrValues = week.map((r) => Number(r.workout.hr)).filter((v) => Number.isFinite(v) && v > 0);
     const weeklyKm = [0, 0, 0, 0, 0, 0, 0, 0];
+    const weeklyMinutes = [0, 0, 0, 0, 0, 0, 0, 0];
     runs.forEach(({ offset, workout }) => {
       const bucket = Math.floor(offset / 7);
-      if (bucket < 8) weeklyKm[7 - bucket] += Number(workout.km) || 0;
+      if (bucket < 8) {
+        weeklyKm[7 - bucket] += Number(workout.km) || 0;
+        weeklyMinutes[7 - bucket] += Number(workout.duration) || 0;
+      }
     });
     return {
       total: runs.length,
       kmWeek,
+      minutesWeek: Math.round(durationWeek),
       sessionsWeek: week.length,
       avgPace: kmWeek > 0 && durationWeek > 0 ? formatPace(durationWeek / kmWeek) : "—",
       avgHr: hrValues.length ? Math.round(avgOf(hrValues)) : null,
       weeklyKm: weeklyKm.map((v) => Math.round(v * 10) / 10),
+      weeklyMinutes: weeklyMinutes.map((v) => Math.round(v)),
     };
   }
 
@@ -1639,8 +1646,12 @@
       });
     }
     checkForUpdate();
+    refreshWeather();
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") checkForUpdate();
+      if (document.visibilityState === "visible") {
+        checkForUpdate();
+        refreshWeather();
+      }
     });
   }
 
@@ -4265,6 +4276,220 @@
     `;
   }
 
+  // ---- Météo (v5.6) ----
+  // Open-Meteo : pas de clé, pas de compte, appel direct depuis le téléphone.
+  // Sert à adapter la séance du jour, surtout les courses : la chaleur fait dériver
+  // la fréquence cardiaque à allure égale, le froid rallonge l'échauffement du mollet.
+
+  const DEFAULT_PLACE = { lat: 43.61, lon: 3.88, place: "Montpellier" };
+
+  function weatherFresh() {
+    const weather = state.weather;
+    if (!weather || weather.day !== dateKey()) return false;
+    const age = Date.now() - new Date(weather.fetchedAt).getTime();
+    return Number.isFinite(age) && age < 3 * 3600 * 1000;
+  }
+
+  async function fetchWeather({ lat, lon, place }) {
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      "&hourly=temperature_2m,apparent_temperature,precipitation_probability,relative_humidity_2m,wind_speed_10m" +
+      "&current=temperature_2m,apparent_temperature,precipitation,wind_speed_10m,relative_humidity_2m" +
+      "&forecast_days=1&timezone=auto";
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error("Météo indisponible");
+    const data = await response.json();
+    const hours = (data.hourly?.time || []).map((time, index) => ({
+      time: String(time).slice(11, 16),
+      temp: data.hourly.temperature_2m?.[index] ?? null,
+      feels: data.hourly.apparent_temperature?.[index] ?? null,
+      rain: data.hourly.precipitation_probability?.[index] ?? null,
+      humidity: data.hourly.relative_humidity_2m?.[index] ?? null,
+      wind: data.hourly.wind_speed_10m?.[index] ?? null,
+    }));
+    state.weather = {
+      lat,
+      lon,
+      place: place || state.weather?.place || "",
+      day: dateKey(),
+      fetchedAt: new Date().toISOString(),
+      current: {
+        temp: data.current?.temperature_2m ?? null,
+        feels: data.current?.apparent_temperature ?? null,
+        rain: data.current?.precipitation ?? null,
+        wind: data.current?.wind_speed_10m ?? null,
+        humidity: data.current?.relative_humidity_2m ?? null,
+      },
+      hours,
+    };
+    persistNow();
+    render();
+  }
+
+  async function refreshWeather({ ask = false } = {}) {
+    if (weatherFresh() && !ask) return;
+    const stored = state.weather?.lat ? { lat: state.weather.lat, lon: state.weather.lon, place: state.weather.place } : null;
+    if (stored && !ask) {
+      try {
+        await fetchWeather(stored);
+      } catch (error) {
+        // Hors ligne : on garde la dernière météo connue.
+      }
+      return;
+    }
+    if (ask && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          fetchWeather({
+            lat: Math.round(position.coords.latitude * 100) / 100,
+            lon: Math.round(position.coords.longitude * 100) / 100,
+            place: "Ta position",
+          }).catch(() => {});
+        },
+        () => {
+          fetchWeather(DEFAULT_PLACE).catch(() => {});
+        },
+        { timeout: 8000, maximumAge: 600000 }
+      );
+      return;
+    }
+    try {
+      await fetchWeather(stored || DEFAULT_PLACE);
+    } catch (error) {
+      // silencieux
+    }
+  }
+
+  // Meilleur créneau de la journée pour courir : on pénalise la chaleur ressentie,
+  // la pluie et le vent, sur les heures encore à venir.
+  function bestRunWindow() {
+    const hours = state.weather?.hours || [];
+    if (!hours.length) return null;
+    const nowHour = new Date().getHours();
+    const candidates = hours
+      .map((hour, index) => ({ ...hour, index }))
+      .filter((hour) => hour.index >= Math.max(nowHour, 6) && hour.index <= 21 && hour.feels !== null);
+    if (!candidates.length) return null;
+    const scored = candidates.map((hour) => ({
+      ...hour,
+      score: Math.max(0, (hour.feels ?? 20) - 18) * 2 + (hour.rain ?? 0) * 0.6 + Math.max(0, (hour.wind ?? 0) - 20) * 0.5,
+    }));
+    scored.sort((a, b) => a.score - b.score);
+    return scored[0];
+  }
+
+  function weatherAdvice(session) {
+    const weather = state.weather;
+    if (!weather) return [];
+    const window = bestRunWindow();
+    const reference = window || { feels: weather.current?.feels, rain: 0, wind: weather.current?.wind, time: "" };
+    const feels = reference.feels ?? weather.current?.feels ?? null;
+    const rain = reference.rain ?? 0;
+    const wind = reference.wind ?? weather.current?.wind ?? 0;
+    const isRun = session?.kind === "course";
+    const notes = [];
+
+    if (feels !== null && feels >= 32) {
+      notes.push(
+        isRun
+          ? "Chaleur ressentie au-delà de 32 °C : ta fréquence cardiaque monte de 10 à 15 battements à allure égale. Cours à la sensation, jamais à l'allure, ou reporte à la fraîcheur — une zone 2 courue trop chaud devient une zone 3 sans bénéfice supplémentaire."
+          : "Plus de 32 °C ressentis : allonge les temps de repos de 30 secondes, bois entre les séries, et ne juge pas ta forme sur les charges du jour."
+      );
+    } else if (feels !== null && feels >= 27) {
+      notes.push(
+        isRun
+          ? "Entre 27 et 32 °C ressentis, attends-toi à 5 à 10 battements de plus qu'en temps frais pour la même allure. Reste sur ta zone 2 au ressenti : tu dois pouvoir parler en phrases complètes."
+          : "Chaleur modérée : hydrate-toi entre les séries, la performance en force baisse un peu quand la température monte."
+      );
+    } else if (feels !== null && feels <= 6) {
+      notes.push(
+        "Moins de 6 °C ressentis : ton mollet sort de rééducation, allonge l'échauffement à 12-15 minutes et couvre le bas de jambe. Un tissu froid encaisse moins bien les changements de rythme."
+      );
+    }
+
+    if (rain >= 60) {
+      notes.push(
+        isRun
+          ? "Pluie probable : sol glissant. Pas de lignes droites ni d'accélérations aujourd'hui, garde une allure régulière — c'est sur les changements de rythme que le mollet se réveille."
+          : "Pluie annoncée : si ta séance contient de la pliométrie en extérieur, fais-la à l'intérieur ou décale-la."
+      );
+    }
+
+    if (wind >= 30 && isRun) {
+      notes.push("Vent supérieur à 30 km/h : pars face au vent et rentre avec, sinon la seconde moitié te coûtera bien plus cher que prévu.");
+    }
+
+    // Le conseil principal vise le créneau recommandé ; si l'instant présent est
+    // nettement plus chaud, on le dit, parce qu'on ne court pas toujours à l'heure idéale.
+    const nowFeels = weather.current?.feels ?? null;
+    if (isRun && nowFeels !== null && feels !== null && nowFeels >= 27 && nowFeels - feels >= 4) {
+      notes.push(
+        `Il fait ${Math.round(nowFeels)} °C ressentis en ce moment. Si tu ne peux pas caler la séance sur le créneau conseillé, réduis l'objectif : même durée mais allure libre, pilotée à la conversation, et de l'eau avant de partir.`
+      );
+    }
+
+    if (!notes.length) {
+      notes.push(
+        isRun
+          ? "Conditions favorables : rien à adapter, tiens ta zone 2 et laisse la fréquence cardiaque piloter."
+          : "Conditions neutres pour une séance en salle : rien à adapter aujourd'hui."
+      );
+    }
+    return notes;
+  }
+
+  function WeatherCard() {
+    const session = programActive() ? programSessionFor() : null;
+    const weather = state.weather;
+
+    if (!weather) {
+      return `
+        <section class="card weather-card">
+          <div class="card-head card-head--save">
+            <div>
+              <p class="eyebrow">Météo</p>
+              <h2>Adapter la séance aux conditions</h2>
+              <p class="small-text">Chaleur, pluie et vent changent la lecture d'une séance — surtout en course. Un appui, aucune donnée personnelle envoyée.</p>
+            </div>
+          </div>
+          <div class="button-row">
+            <button type="button" class="primary-button" data-action="enable-weather">Activer la météo</button>
+          </div>
+        </section>
+      `;
+    }
+
+    const window = bestRunWindow();
+    const current = weather.current || {};
+    const notes = weatherAdvice(session);
+    return `
+      <section class="card weather-card">
+        <div class="card-head card-head--save">
+          <div>
+            <p class="eyebrow">Météo · ${escapeHtml(weather.place || "position")}</p>
+            <h2>${current.temp !== null ? `${Math.round(current.temp)} °C` : "—"}${
+              current.feels !== null && Math.abs((current.feels ?? 0) - (current.temp ?? 0)) >= 1
+                ? ` · ${Math.round(current.feels)} °C ressentis`
+                : ""
+            }</h2>
+          </div>
+          ${StatusBadge(session?.kind === "course" ? "Course du jour" : session ? "Séance en salle" : "Repos", "info")}
+        </div>
+        ${
+          window && session?.kind === "course"
+            ? `<p class="weather-window"><strong>Meilleur créneau pour courir : ${escapeHtml(window.time)}</strong><span>${
+                window.feels !== null ? `${Math.round(window.feels)} °C ressentis` : ""
+              }${window.rain !== null ? ` · ${window.rain} % de pluie` : ""}${window.wind !== null ? ` · vent ${Math.round(window.wind)} km/h` : ""}</span></p>`
+            : ""
+        }
+        <div class="weather-notes">
+          ${notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}
+        </div>
+        <button type="button" class="ghost-button" data-action="enable-weather">Actualiser</button>
+      </section>
+    `;
+  }
+
   const RUN_KINDS = { zone2: "Zone 2", fractionne: "Fractionné", longue: "Course longue", autre: "Autre" };
 
   function WorkoutLogCard() {
@@ -4412,9 +4637,9 @@
                   </div>
                   <div class="lift-table">
                     <div class="lift-row">
-                      <span class="lift-name">Allure moyenne</span>
+                      <span class="lift-name">${km > 0 ? "Allure moyenne" : "Durée"}</span>
                       <span class="lift-metrics">
-                        <span class="lift-chip">${escapeHtml(formatPace(duration / km))}</span>
+                        <span class="lift-chip">${km > 0 ? escapeHtml(formatPace(duration / km)) : `${duration} min`}</span>
                         ${workout.hr ? `<span class="lift-chip">${workout.hr} bpm</span>` : ""}
                       </span>
                     </div>
@@ -4763,6 +4988,7 @@
       workout: `
         <div class="page-grid">
           ${QuickSessionCard()}
+          ${WeatherCard()}
           <div class="section-grid">
             ${WorkoutCard(decision)}
             ${CoachSummary(decision, readiness)}
@@ -5332,13 +5558,15 @@
           ${StatusBadge(`${running.total} course(s) sur 8 semaines`, "good")}
         </div>
         <div class="stat-grid">
-          <div class="stat-tile"><span>Km semaine</span><strong>${String(running.kmWeek).replace(".", ",")}</strong></div>
+          <div class="stat-tile"><span>Temps semaine</span><strong>${running.minutesWeek} min</strong></div>
           <div class="stat-tile"><span>Séances 7 j</span><strong>${running.sessionsWeek}</strong></div>
-          <div class="stat-tile"><span>Allure moyenne</span><strong>${running.avgPace}</strong></div>
           <div class="stat-tile"><span>FC moyenne</span><strong>${running.avgHr ? `${running.avgHr} bpm` : "—"}</strong></div>
+          <div class="stat-tile"><span>Distance semaine</span><strong>${running.kmWeek > 0 ? `${String(running.kmWeek).replace(".", ",")} km` : "—"}</strong></div>
         </div>
-        <p class="small-text">Volume hebdomadaire sur 8 semaines :</p>
-        ${TrendChart(running.weeklyKm, "var(--blue)")}
+        <p class="small-text">Minutes de course par semaine, sur 8 semaines — c'est le temps passé en zone 2 qui construit la base aérobie, la distance n'est qu'une conséquence.${
+          running.avgPace !== "—" ? ` Allure moyenne indicative : ${escapeHtml(running.avgPace)}.` : ""
+        }</p>
+        ${TrendChart(running.weeklyMinutes, "var(--blue)")}
       </section>
     `;
   }
@@ -5918,6 +6146,10 @@
     if (!actionButton) return;
     const action = actionButton.dataset.action;
 
+    if (action === "enable-weather") {
+      refreshWeather({ ask: true });
+      return;
+    }
     if (action === "apply-update") {
       applyUpdate();
       return;
