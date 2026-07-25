@@ -1,6 +1,7 @@
 (function () {
-  const APP_VERSION = "5.6.2";
+  const APP_VERSION = "5.7.0";
   const STORAGE_KEY = "athlete-os-v3";
+  const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
 
   const tabs = [
@@ -407,11 +408,57 @@
   }
 
   const app = document.getElementById("app");
+  // Combien de jours de journal contient un état brut ? Sert à comparer
+  // la clé principale et le miroir de secours au chargement.
+  function journalDayCount(obj) {
+    try {
+      return Object.keys(obj?.journal || {}).filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key)).length;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  // Un état brut porte-t-il des données que l'athlète a saisies ?
+  function rawStateHasData(obj) {
+    if (!obj || typeof obj !== "object") return false;
+    if (obj.imports?.health || obj.imports?.garmin) return true;
+    return Object.values(obj.journal || {}).some((entry) => {
+      if (!entry) return false;
+      return (
+        entry.morning?.completed ||
+        entry.evening?.touched ||
+        (entry.workouts || []).length ||
+        (entry.activities || []).length ||
+        Number(entry.weight) > 0 ||
+        Number(entry.waist) > 0
+      );
+    });
+  }
+
   let state = loadState();
 
-  function loadState() {
+  function loadState(fromSafe = false) {
+    let rawMain = null;
     try {
-      let saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      let saved = fromSafe
+        ? JSON.parse(localStorage.getItem(SAFE_KEY) || "null")
+        : JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      rawMain = saved;
+      if (fromSafe && !saved) return null;
+
+      // Filet de sécurité : si la clé principale a été vidée ou tronquée par un
+      // incident (mise à jour, éviction partielle), mais que le miroir de secours
+      // contient davantage de journal, on récupère le miroir.
+      if (!fromSafe) {
+        try {
+          const safe = JSON.parse(localStorage.getItem(SAFE_KEY) || "null");
+          if (safe && journalDayCount(safe) > journalDayCount(saved)) {
+            saved = safe;
+          }
+        } catch (safeError) {
+          // miroir illisible : on continue avec la clé principale
+        }
+      }
 
       // Migration depuis l'ancienne version (check-ins non datés).
       if (!saved) {
@@ -474,13 +521,36 @@
         uiVersion: 2,
       };
     } catch (error) {
-      return structuredClone(defaultState);
+      // Le traitement de la clé principale a échoué (structure inattendue après
+      // une mise à jour, par exemple). Plutôt que de repartir vide — ce qui
+      // écraserait ensuite les données au premier enregistrement — on tente le
+      // miroir de secours, puis on met de côté le brut illisible pour diagnostic.
+      if (!fromSafe) {
+        try {
+          const recovered = loadState(true);
+          if (recovered && rawStateHasData(recovered)) return recovered;
+        } catch (safeError) {
+          // rien à récupérer
+        }
+      }
+      try {
+        if (rawMain) localStorage.setItem("athlete-os-v3-corrupt", JSON.stringify(rawMain));
+      } catch (writeError) {
+        // pas grave
+      }
+      return fromSafe ? null : structuredClone(defaultState);
     }
   }
 
   function persist() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      const payload = JSON.stringify(state);
+      localStorage.setItem(STORAGE_KEY, payload);
+      // Miroir de secours : mis à jour uniquement quand l'état porte des données,
+      // pour ne jamais remplacer un bon miroir par du vide.
+      if (rawStateHasData(state)) {
+        localStorage.setItem(SAFE_KEY, payload);
+      }
     } catch (error) {
       // Stockage plein ou indisponible : l'app continue en mémoire.
     }
@@ -1658,6 +1728,13 @@
         // L'app reste pleinement utilisable sans service worker, notamment en fichier local.
       });
     }
+    // Demande à iOS/Safari de ne pas évincer le stockage local de la PWA.
+    // Sans ça, le système peut supprimer les données après quelques jours.
+    if (navigator.storage?.persist) {
+      navigator.storage.persisted?.().then((already) => {
+        if (!already) navigator.storage.persist().catch(() => {});
+      }).catch(() => {});
+    }
     checkForUpdate();
     refreshWeather();
     document.addEventListener("visibilitychange", () => {
@@ -1690,6 +1767,10 @@
   }
 
   async function applyUpdate() {
+    // Sauvegarde tout ce qui est à l'écran avant de recharger : une saisie
+    // en cours (debounce non encore écrit) ne doit pas partir avec le reload.
+    flushInputs({ force: true });
+    persistNow();
     try {
       if (window.caches) {
         const keys = await caches.keys();
