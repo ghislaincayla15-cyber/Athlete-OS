@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.6.0";
+  const APP_VERSION = "5.6.1";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -4283,6 +4283,12 @@
 
   const DEFAULT_PLACE = { lat: 43.61, lon: 3.88, place: "Montpellier" };
 
+  function formatClock(iso) {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    return `à ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
   function weatherFresh() {
     const weather = state.weather;
     if (!weather || weather.day !== dateKey()) return false;
@@ -4485,7 +4491,15 @@
         <div class="weather-notes">
           ${notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}
         </div>
-        <button type="button" class="ghost-button" data-action="enable-weather">Actualiser</button>
+        <p class="small-text">Prévisions pour <strong>${escapeHtml(weather.place || "Montpellier")}</strong>${
+          weather.place === "Ta position" ? " (position de ton téléphone)" : " — par défaut, tant que tu n'as pas partagé ta position"
+        }. Mise à jour ${escapeHtml(formatClock(weather.fetchedAt))}.</p>
+        <div class="button-row">
+          <button type="button" class="secondary-button" data-action="enable-weather">${
+            weather.place === "Ta position" ? "Actualiser" : "Utiliser ma position"
+          }</button>
+          ${weather.place === "Ta position" ? `<button type="button" class="ghost-button" data-action="weather-default">Revenir à Montpellier</button>` : ""}
+        </div>
       </section>
     `;
   }
@@ -4967,6 +4981,7 @@
           <div class="page-grid">
             ${RingsRow(readiness)}
             ${QuickSessionCard()}
+            ${WeatherCard()}
             ${MissingCard()}
             ${GaugeGrid()}
             ${CoachDecisionCard(decision)}
@@ -6148,6 +6163,11 @@
 
     if (action === "enable-weather") {
       refreshWeather({ ask: true });
+      return;
+    }
+    if (action === "weather-default") {
+      state.weather = null;
+      fetchWeather(DEFAULT_PLACE).catch(() => {});
       return;
     }
     if (action === "apply-update") {
