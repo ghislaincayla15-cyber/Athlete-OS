@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.6.1";
+  const APP_VERSION = "5.6.2";
   const STORAGE_KEY = "athlete-os-v3";
   const LEGACY_KEY = "athlete-os-v2";
 
@@ -195,7 +195,7 @@
       {
         role: "coach",
         text:
-          "Bienvenue. L’app est vide : complète ton check-in, puis importe Apple Santé ou ajoute ton programme pour obtenir des recommandations personnelles.",
+          "Salut. Pose-moi une question sur ta séance, ta récupération, ton poids ou ta semaine — je réponds à partir de ce que tu as enregistré. Plus tu remplis, plus je suis précis.",
       },
     ],
     sources: {
@@ -1243,6 +1243,19 @@
 
   function hasRealPerformances() {
     return liftHistories().size > 0 || runningSummary().total > 0;
+  }
+
+  // L'app contient-elle quelque chose à analyser ? (check-in, séance, import, bilan)
+  function hasAnyData() {
+    return Object.values(state.journal || {}).some((entry) => {
+      if (!entry) return false;
+      if (entry.morning?.completed) return true;
+      if (entry.evening?.touched) return true;
+      if ((entry.workouts || []).length) return true;
+      if ((entry.activities || []).length) return true;
+      if (Number(entry.weight) > 0) return true;
+      return false;
+    }) || hasImportedHealth();
   }
 
   // ---- Bloc 1 : programme réel de l'athlète (v2 du 23/07/2026 — amorce 23-26/07, S1 le lundi 27/07) ----
@@ -5947,7 +5960,7 @@
               <p class="eyebrow">Discussion</p>
               <h2>Préparateur physique intégré</h2>
             </div>
-            ${StatusBadge("V1 simulee", "watch")}
+            ${StatusBadge(hasAnyData() ? "Sur tes données" : "En attente de données", hasAnyData() ? "good" : "watch")}
           </div>
           <div class="messages" id="messages">
             ${state.chat.map((message) => `<div class="message ${message.role}">${escapeHtml(message.text)}</div>`).join("")}
@@ -6617,31 +6630,28 @@
     const decision = makeCoachDecision(readiness);
     const lower = prompt.toLowerCase();
 
-    if (!hasTrainingData()) {
-      if (lower.includes("alimentation")) {
-        return "Je peux suivre tes habitudes alimentaires simples, mais aucune estimation calorique ne sera inventée. Commence par renseigner repas, protéines, faim, énergie et digestion.";
+    // Réponses « bloc / semaine » : elles s'appuient sur le programme réel, données ou pas.
+    if ((lower.includes("semaine") || lower.includes("bloc")) && programStartDate()) {
+      if (programUpcoming()) {
+        return `Bloc 1 programmé : départ le ${formatFrDate(programStartDate())} (J-${daysUntilBlockStart()}). D'ici là : check-ins quotidiens, tour de taille de référence, et envoie ton export Hevy au coach pour calibrer les charges de départ.`;
       }
-      if (lower.includes("progression") || lower.includes("stagnation")) {
-        const real = realProgressReply();
-        if (real) return real;
+      if (programActive()) {
+        const week = programWeek();
+        const stats = programStats();
+        const weekAdherence = adherenceStats(7);
+        const load = weekSessionLoad();
+        return `Bloc 1, ${week === 0 ? "phase d'amorce" : `semaine ${week}/${BLOC1.totalWeeks}`} — « ${programPhase(week)?.label || ""} ». Cette semaine : ${
+          load.planned ? `${load.done} séance(s) faite(s) sur ${load.planned}` : "aucune séance prévue à ce stade"
+        }${weekAdherence.pct !== null ? `, adhérence 7 jours ${weekAdherence.pct} %` : ""}. Objectif : ${programPhase(week)?.weeklyGoal || "exécution propre"}.`;
       }
-      if ((lower.includes("semaine") || lower.includes("bloc")) && programStartDate()) {
-        if (programUpcoming()) {
-          return `Bloc 1 programmé : départ le ${formatFrDate(programStartDate())} (J-${daysUntilBlockStart()}). D'ici là : check-ins quotidiens, tour de taille de référence, et envoie ton export Hevy au coach pour calibrer les charges de départ.`;
-        }
-        if (programActive()) {
-          const week = programWeek();
-          const stats = programStats();
-          const weekAdherence = adherenceStats(7);
-          return `Bloc 1, semaine ${week}/${BLOC1.totalWeeks} — phase « ${programPhase(week)?.label || ""} ». ${stats.done} séance(s) conforme(s) sur ${stats.planned} prévue(s) depuis le départ${
-            weekAdherence.pct !== null ? `, adhérence 7 jours ${weekAdherence.pct} %` : ""
-          }. Objectif de la semaine : ${programPhase(week)?.weeklyGoal || "exécution propre"}`;
-        }
+    }
+
+    // App réellement vide : aucun check-in, aucune séance, aucun import.
+    if (!hasAnyData()) {
+      if (lower.includes("alimentation") || lower.includes("taille") || lower.includes("gras")) {
+        return "Pas de journal alimentaire dans l'app : la lecture se fait sur le croisement poids / tour de taille, que tu peux commencer à renseigner au check-in. Repères sans compter : protéines à chaque repas, glucides autour des séances.";
       }
-      if (lower.includes("semaine") || lower.includes("bloc") || lower.includes("progression") || lower.includes("stagnation")) {
-        return "Je n’ai pas encore assez de données pour analyser un bloc, une progression ou une stagnation. Enregistre tes séances dans le journal ou importe ton historique.";
-      }
-      return `${decision.label}. L’app est vide pour l’instant : complète ton check-in, puis ajoute tes données réelles pour obtenir une analyse fiable.`;
+      return `${decision.label}. L'app n'a encore aucune donnée : commence par le check-in du matin, déclare ta séance, ou importe Apple Santé et ton fichier Garmin. Dès qu'il y a de la matière, j'analyse.`;
     }
 
     if (lower.includes("recuperation") || lower.includes("récupération") || lower.includes("score")) {
@@ -6687,7 +6697,7 @@
       const overload = ready && signals.length ? ` Côté fatigue, je surveille : ${signals.map((signal) => signal.label.toLowerCase()).join(", ")}.` : "";
       const real = realProgressReply();
       if (real) return `${real}${overload}`;
-      return `Progression positive sur développé couché, tractions et rowing. Le développé militaire est stable sur trois séances : je propose variation de reps, tempo et RPE maîtrisé avant d’ajouter du volume.${overload}`;
+      return `Pas encore assez de séances saisies pour lire une progression par exercice — il m'en faut au moins deux ou trois sur le même mouvement. Enregistre tes séances de musculation et je te dirai ce qui monte et ce qui stagne.${overload}`;
     }
     if (lower.includes("alimentation") || lower.includes("taille") || lower.includes("gras")) {
       // Plus de journal alimentaire : la lecture se fait sur poids + tour de taille.
