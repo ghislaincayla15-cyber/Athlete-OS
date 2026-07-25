@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.7.2";
+  const APP_VERSION = "5.8.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -9,7 +9,7 @@
     { id: "program", label: "Programme", icon: "calendar" },
     { id: "performance", label: "Performances", icon: "chart" },
     { id: "health", label: "Santé", icon: "heart" },
-    { id: "coach", label: "Coach", icon: "message" },
+    { id: "export", label: "Export", icon: "chart" },
   ];
 
   const pageCopy = {
@@ -29,9 +29,9 @@
       title: "Santé & forme",
       subtitle: "Tendances de moyen terme, Health & Athletic Index et estimations secondaires isolées.",
     },
-    coach: {
-      title: "Coach IA",
-      subtitle: "Actions rapides, historique des décisions et discussion intégrée au suivi.",
+    export: {
+      title: "Export & suivi",
+      subtitle: "Briefing à transmettre au coach, historique des décisions et sauvegarde des données.",
     },
   };
 
@@ -491,6 +491,8 @@
         ...structuredClone(defaultState),
         ...saved,
         dataMode: saved.dataMode === "demo" ? "blank" : saved.dataMode || "blank",
+        // v5.8.0 : l'onglet Coach (chat local) est remplacé par Export.
+        activeTab: saved.activeTab === "coach" ? "export" : saved.activeTab || "today",
         journal,
         decisions: Array.isArray(saved.decisions) ? saved.decisions.slice(0, 40) : [],
         deload: { ...structuredClone(defaultState.deload), ...(saved.deload || {}) },
@@ -6000,85 +6002,244 @@
     `;
   }
 
-  function renderCoach() {
-    const quickActions = [
-      "Analyse ma récupération",
-      "Adapte ma séance",
-      "Fais mon bilan hebdomadaire",
-      "Analyse ma progression",
-      "Prépare ma semaine",
-      "Explique mon score",
-      "Identifie mes stagnations",
-      "Analyse mon alimentation récente",
-      "Prépare mon prochain bloc",
-    ];
+  // ---- Briefing texte : ce que l'athlète transmet au coach (Claude) ----
+  // Remplace l'ancien chat local (matcher de mots-clés) retiré en v5.8.0 :
+  // l'app collecte et met en forme, le raisonnement se fait dans la conversation.
+  function briefingDayKeys(days) {
+    const keys = [];
+    for (let i = 0; i < days; i++) keys.push(addDaysKey(dateKey(), -i));
+    return keys.filter((key) => {
+      const entry = state.journal?.[key];
+      if (!entry) return false;
+      return (
+        entry.morning?.completed ||
+        entry.evening?.touched ||
+        entry.nutrition?.touched ||
+        (entry.workouts || []).length ||
+        (entry.activities || []).length ||
+        Number(entry.weight) > 0 ||
+        Number(entry.waist) > 0
+      );
+    });
+  }
+
+  function briefingWorkoutLines(entry) {
+    const out = [];
+    (entry.workouts || []).forEach((workout) => {
+      if (workout.type === "course") {
+        const bits = [];
+        if (Number(workout.duration) > 0) bits.push(`${workout.duration} min`);
+        if (Number(workout.km) > 0) bits.push(`${String(workout.km).replace(".", ",")} km`);
+        if (Number(workout.duration) > 0 && Number(workout.km) > 0) bits.push(formatPace(workout.duration / workout.km));
+        if (Number(workout.hr) > 0) bits.push(`FC ${workout.hr}`);
+        if (workout.kind) bits.push(String(workout.kind));
+        out.push(`- Course : ${bits.join(" · ") || "sans détail"}`);
+        return;
+      }
+      out.push("- Muscu :");
+      (workout.exercises || []).forEach((ex) => {
+        const charge = Number(ex.weight) > 0 ? `${ex.weight} kg` : "poids de corps";
+        const rpe = ex.rpe ? ` RPE ${ex.rpe}` : " RPE non renseigné";
+        out.push(`  - ${ex.name || "exercice sans nom"} — ${charge} × ${ex.reps || "?"} reps × ${ex.sets || "?"} séries${rpe}`);
+      });
+      if (!(workout.exercises || []).length) out.push("  - aucune charge saisie");
+    });
+    (entry.activities || []).forEach((activity) => {
+      out.push(`- Activité libre : ${activity.name || activity.type || "non nommée"}${activity.duration ? ` (${activity.duration} min)` : ""}`);
+    });
+    return out;
+  }
+
+  function buildBriefing(days = 14) {
+    const lines = [];
+    const today = dateKey();
+    const week = programWeek();
+    const phase = programPhase(week);
+    const health = state.imports?.health || null;
+
+    lines.push(`# Briefing Athlete OS — ${formatFrDate(today)}`);
+    lines.push("");
+
+    const ctx = [BLOC1.name];
+    if (inAmorce()) ctx.push("semaine d'amorce (avant S1)");
+    else if (week === 0) ctx.push(`bloc non démarré, départ le ${formatFrDate(programStartDate())}`);
+    else if (week) ctx.push(`semaine ${week}/${BLOC1.totalWeeks}${phase ? ` — ${phase.label}` : ""}`);
+    lines.push(`**Programme** : ${ctx.join(" · ")}`);
+
+    const session = programSessionFor(today);
+    if (session) lines.push(`**Séance prévue aujourd'hui** : ${session.title || session.name || "—"}`);
+
+    if (state.deload?.activeUntil) lines.push(`**Deload actif** jusqu'au ${formatFrDate(state.deload.activeUntil)}`);
+
+    lines.push("");
+    lines.push("## Repères actuels");
+    const latestWeight = latestJournalValue("weight");
+    const latestWaist = latestJournalValue("waist");
+    if (latestWeight) lines.push(`- Poids : ${latestWeight.value} kg (le ${formatFrDate(latestWeight.key)})`);
+    if (latestWaist) lines.push(`- Tour de taille : ${latestWaist.value} cm (le ${formatFrDate(latestWaist.key)})`);
+    if (health) {
+      if (health.rhr) lines.push(`- FC repos : ${health.rhr} bpm`);
+      if (health.hrvMs) lines.push(`- HRV : ${health.hrvMs} ms`);
+      else lines.push("- HRV : non disponible (Garmin ne synchronise pas le HRV vers Apple Santé)");
+      if (health.sleepMinutes) lines.push(`- Sommeil (dernière nuit importée) : ${Math.round(health.sleepMinutes / 60)} h ${Math.round(health.sleepMinutes % 60)} min`);
+      if (health.vo2) lines.push(`- VO2max estimée : ${health.vo2}`);
+      lines.push(`- Import Apple Santé : ${health.records || 0} enregistrements, le ${formatFrDate(String(health.importedAt || "").slice(0, 10))}`);
+    } else {
+      lines.push("- Aucun import Apple Santé pour l'instant");
+    }
+
+    const keys = briefingDayKeys(days);
+    lines.push("");
+    lines.push(`## Journal des ${days} derniers jours (${keys.length} jour(s) renseigné(s))`);
+    if (!keys.length) {
+      lines.push("");
+      lines.push("Aucune saisie sur la période.");
+    }
+    keys.forEach((key) => {
+      const entry = state.journal[key];
+      lines.push("");
+      const head = [`### ${formatFrDate(key)}`];
+      if (entry.readinessScore) head.push(`readiness ${entry.readinessScore}${entry.readinessConfidence ? ` (confiance ${String(entry.readinessConfidence).toLowerCase()})` : ""}`);
+      lines.push(head.join(" — "));
+      if (entry.decisionLabel) lines.push(`Décision du jour : ${entry.decisionLabel}`);
+      const mesures = [];
+      if (Number(entry.weight) > 0) mesures.push(`poids ${entry.weight} kg`);
+      if (Number(entry.waist) > 0) mesures.push(`tour de taille ${entry.waist} cm`);
+      if (mesures.length) lines.push(`Mesures : ${mesures.join(" · ")}`);
+      if (entry.morning?.completed) {
+        lines.push(
+          `Check-in matin : fatigue ${entry.morning.fatigue}/5 · motivation ${entry.morning.motivation}/5 · énergie ${entry.morning.energy} · douleur ${entry.morning.pain} · sommeil ${entry.morning.sleepQuality} · muscles ${entry.morning.muscleQuality}`
+        );
+      }
+      const workoutLines = briefingWorkoutLines(entry);
+      if (workoutLines.length) {
+        lines.push("Séances :");
+        workoutLines.forEach((line) => lines.push(line));
+      }
+      if (entry.evening?.touched) {
+        const bits = [`complétion ${entry.evening.completion}`];
+        if (entry.evening.duration) bits.push(`${entry.evening.duration} min`);
+        if (entry.evening.rpe) bits.push(`RPE ${entry.evening.rpe}`);
+        bits.push(`douleur ${entry.evening.pain}`);
+        if (entry.evening.satisfaction) bits.push(`satisfaction ${entry.evening.satisfaction}/5`);
+        lines.push(`Bilan du soir : ${bits.join(" · ")}`);
+        if (entry.evening.reason) lines.push(`  Raison notée : ${entry.evening.reason}`);
+        if (entry.evening.comment) lines.push(`  Commentaire : ${entry.evening.comment}`);
+      }
+      if (entry.nutrition?.touched) {
+        lines.push(
+          `Nutrition : ${entry.nutrition.meals || "?"} repas dont ${entry.nutrition.proteinMeals || "?"} protéinés · végétaux ${entry.nutrition.plants} · qualité ${entry.nutrition.diet} · faim ${entry.nutrition.hunger} · digestion ${entry.nutrition.digestion} · alcool ${entry.nutrition.alcohol}${entry.nutrition.foods ? ` · ${entry.nutrition.foods}` : ""}`
+        );
+      }
+    });
+
+    const decisions = (state.decisions || []).slice(0, 8);
+    if (decisions.length) {
+      lines.push("");
+      lines.push("## Décisions enregistrées (8 dernières)");
+      decisions.forEach((item) => {
+        lines.push(`- ${formatFrDate(item.date)} — ${item.label} (${item.reason}) · source : ${item.dataUsed} · confiance ${item.confidence}`);
+      });
+    }
+
+    const missing = [];
+    if (!health) missing.push("import Apple Santé");
+    if (!latestWaist) missing.push("tour de taille");
+    const withoutRpe = keys.filter((key) => (state.journal[key].workouts || []).some((w) => w.type === "muscu" && (w.exercises || []).some((ex) => !ex.rpe)));
+    if (withoutRpe.length) missing.push(`RPE manquant sur ${withoutRpe.length} séance(s) muscu`);
+    const withoutEvening = keys.filter((key) => !state.journal[key].evening?.touched);
+    if (withoutEvening.length) missing.push(`bilan du soir absent sur ${withoutEvening.length} jour(s)`);
+    if (missing.length) {
+      lines.push("");
+      lines.push("## Données manquantes à signaler au coach");
+      missing.forEach((item) => lines.push(`- ${item}`));
+    }
+
+    lines.push("");
+    lines.push(`_Généré par Athlete OS v${APP_VERSION}._`);
+    return lines.join("\n");
+  }
+
+  function latestJournalValue(field) {
+    const keys = Object.keys(state.journal || {})
+      .filter((key) => Number(state.journal[key]?.[field]) > 0)
+      .sort()
+      .reverse();
+    if (!keys.length) return null;
+    return { key: keys[0], value: state.journal[keys[0]][field] };
+  }
+
+  function renderExport() {
     const confidenceLabel = (value) => ({ Eleve: "élevée", Moyen: "moyenne", Faible: "faible" }[value] || value || "moyenne");
     const decisionHistory = state.decisions || [];
+    const briefing = buildBriefing(14);
+    const journalDays = Object.keys(state.journal || {}).length;
+    const appLog = (state.chat || []).filter((message) => message.role === "coach").slice(-6);
     return `
-      <div class="chat-layout">
-        <div class="page-grid">
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">Actions rapides</p>
-                <h2>Questions utiles au quotidien</h2>
-              </div>
-              ${StatusBadge("Coach local", "info")}
-            </div>
-            <div class="quick-grid">
-              ${quickActions
-                .map((action) => `<button type="button" class="quick-button" data-action="quick-chat" data-prompt="${escapeHtml(action)}">${icon("message")}${escapeHtml(action)}</button>`)
-                .join("")}
-            </div>
-          </section>
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">Historique des décisions</p>
-                <h2>Coach decisions log</h2>
-              </div>
-              ${StatusBadge("Memoire locale", "info")}
-            </div>
-            <div class="decision-list">
-              ${
-                decisionHistory.length
-                  ? decisionHistory
-                      .map((item) => {
-                        const label = formatDayLabel(item.date);
-                        return `
-                          <article class="timeline-item">
-                            <strong>${escapeHtml(label.date)} — ${escapeHtml(item.label)}</strong>
-                            <p>Justification : ${escapeHtml(item.reason)}.</p>
-                            <p>Données : ${escapeHtml(item.dataUsed)}. Confiance ${escapeHtml(confidenceLabel(item.confidence))}.</p>
-                            <p>Résultat observé : ${escapeHtml(observedOutcome(item))}</p>
-                          </article>
-                        `;
-                      })
-                      .join("")
-                  : `<div class="empty-state">
-                      <strong>Aucune décision enregistrée</strong>
-                      <p>Chaque adaptation confirmée, deload accepté ou refusé sera tracé ici avec sa justification, les données utilisées et le résultat observé les jours suivants.</p>
-                    </div>`
-              }
-            </div>
-          </section>
-        </div>
-        <section class="chat-card">
+      <div class="page-grid">
+        <section class="card">
           <div class="card-head">
             <div>
-              <p class="eyebrow">Discussion</p>
-              <h2>Préparateur physique intégré</h2>
+              <p class="eyebrow">Briefing</p>
+              <h2>Transmettre mes données au coach</h2>
             </div>
-            ${StatusBadge(hasAnyData() ? "Sur tes données" : "En attente de données", hasAnyData() ? "good" : "watch")}
+            ${StatusBadge(hasAnyData() ? "Prêt" : "En attente de données", hasAnyData() ? "good" : "watch")}
           </div>
-          <div class="messages" id="messages">
-            ${state.chat.map((message) => `<div class="message ${message.role}">${escapeHtml(message.text)}</div>`).join("")}
+          <p class="small-text">Athlete OS collecte et met en forme ; l'analyse se fait dans la conversation avec le coach. Copie ce briefing et colle-le dans le fil, ou envoie la sauvegarde JSON complète.</p>
+          <div class="button-row">
+            <button type="button" class="primary-button" data-action="copy-briefing">${icon("message")}Copier le briefing</button>
+            <button type="button" class="ghost-button" data-action="download-briefing">${icon("chart")}Télécharger en .md</button>
+            <button type="button" class="ghost-button" data-action="export-data">${icon("chart")}Sauvegarde JSON complète</button>
           </div>
-          <form class="chat-form" data-chat-form>
-            <input type="text" name="message" placeholder="Demande au coach..." autocomplete="off" />
-            <button type="submit" class="primary-button">${icon("send")}Envoyer</button>
-          </form>
-          <p class="small-text">Les réponses utilisent uniquement les données présentes dans cette app. Aucune décision médicale n’est produite.</p>
+          <pre class="briefing-preview">${escapeHtml(briefing)}</pre>
+          <p class="small-text">14 derniers jours · ${journalDays} jour(s) au journal au total.</p>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Historique des décisions</p>
+              <h2>Journal des adaptations</h2>
+            </div>
+            ${StatusBadge("Mémoire locale", "info")}
+          </div>
+          <div class="decision-list">
+            ${
+              decisionHistory.length
+                ? decisionHistory
+                    .map((item) => {
+                      const label = formatDayLabel(item.date);
+                      return `
+                        <article class="timeline-item">
+                          <strong>${escapeHtml(label.date)} — ${escapeHtml(item.label)}</strong>
+                          <p>Justification : ${escapeHtml(item.reason)}.</p>
+                          <p>Données : ${escapeHtml(item.dataUsed)}. Confiance ${escapeHtml(confidenceLabel(item.confidence))}.</p>
+                          <p>Résultat observé : ${escapeHtml(observedOutcome(item))}</p>
+                        </article>
+                      `;
+                    })
+                    .join("")
+                : `<div class="empty-state">
+                    <strong>Aucune décision enregistrée</strong>
+                    <p>Chaque adaptation confirmée, deload accepté ou refusé sera tracé ici avec sa justification, les données utilisées et le résultat observé les jours suivants.</p>
+                  </div>`
+            }
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Journal de l'app</p>
+              <h2>Derniers enregistrements</h2>
+            </div>
+          </div>
+          <div class="decision-list">
+            ${
+              appLog.length
+                ? appLog.map((message) => `<article class="timeline-item"><p>${escapeHtml(message.text)}</p></article>`).join("")
+                : `<div class="empty-state"><strong>Rien pour l'instant</strong><p>Les confirmations d'enregistrement (séance, course, import, sauvegarde) s'affichent ici.</p></div>`
+            }
+          </div>
+          <p class="small-text">Confirmations techniques de l'app. Ce ne sont pas des conseils d'entraînement.</p>
         </section>
       </div>
     `;
@@ -6088,7 +6249,7 @@
     if (state.activeTab === "program") return renderProgram();
     if (state.activeTab === "performance") return renderPerformance();
     if (state.activeTab === "health") return renderHealth();
-    if (state.activeTab === "coach") return renderCoach();
+    if (state.activeTab === "export") return renderExport();
     return renderToday();
   }
 
@@ -6492,10 +6653,11 @@
       );
       addCoachMessage("coach", "Deload terminé. Reprise progressive : première séance à RPE 7 maximum, puis retour au plan du bloc.");
     }
-    if (action === "quick-chat") {
-      const prompt = actionButton.dataset.prompt;
-      addCoachMessage("user", prompt);
-      addCoachMessage("coach", generateCoachReply(prompt));
+    if (action === "copy-briefing") {
+      copyBriefingToClipboard();
+    }
+    if (action === "download-briefing") {
+      downloadBriefing();
     }
     if (action === "draft-mode") {
       harvestDraft();
@@ -6717,162 +6879,53 @@
     markScopeTouched(scope);
   }
 
-  function handleSubmit(event) {
-    if (!event.target.matches("[data-chat-form]")) return;
-    event.preventDefault();
-    const input = event.target.elements.message;
-    const text = input.value.trim();
-    if (!text) return;
-    addCoachMessage("user", text);
-    addCoachMessage("coach", generateCoachReply(text));
-    input.value = "";
-    persist();
-    render();
+  // v5.8.0 : plus aucun formulaire de chat. Conservé pour ne pas casser app.onsubmit.
+  function handleSubmit() {}
+
+  function copyBriefingToClipboard() {
+    const text = buildBriefing(14);
+    const done = () => addCoachMessage("coach", "Briefing copié. Colle-le dans la conversation avec ton coach.");
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+      return;
+    }
+    fallbackCopy(text, done);
+  }
+
+  function fallbackCopy(text, done) {
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+      done();
+    } catch (error) {
+      addCoachMessage("coach", "Copie impossible sur cet appareil. Utilise « Télécharger en .md ».");
+    }
+  }
+
+  function downloadBriefing() {
+    const blob = new Blob([buildBriefing(14)], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `athlete-os-briefing-${dateKey()}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    addCoachMessage("coach", "Briefing téléchargé en .md.");
   }
 
   function addCoachMessage(role, text) {
     state.chat = [...state.chat, { role, text }].slice(-12);
   }
 
-  function generateCoachReply(prompt) {
-    const readiness = calculateReadiness();
-    const decision = makeCoachDecision(readiness);
-    const lower = prompt.toLowerCase();
-
-    // Réponses « bloc / semaine » : elles s'appuient sur le programme réel, données ou pas.
-    if ((lower.includes("semaine") || lower.includes("bloc")) && programStartDate()) {
-      if (programUpcoming()) {
-        return `Bloc 1 programmé : départ le ${formatFrDate(programStartDate())} (J-${daysUntilBlockStart()}). D'ici là : check-ins quotidiens, tour de taille de référence, et envoie ton export Hevy au coach pour calibrer les charges de départ.`;
-      }
-      if (programActive()) {
-        const week = programWeek();
-        const stats = programStats();
-        const weekAdherence = adherenceStats(7);
-        const load = weekSessionLoad();
-        return `Bloc 1, ${week === 0 ? "phase d'amorce" : `semaine ${week}/${BLOC1.totalWeeks}`} — « ${programPhase(week)?.label || ""} ». Cette semaine : ${
-          load.planned ? `${load.done} séance(s) faite(s) sur ${load.planned}` : "aucune séance prévue à ce stade"
-        }${weekAdherence.pct !== null ? `, adhérence 7 jours ${weekAdherence.pct} %` : ""}. Objectif : ${programPhase(week)?.weeklyGoal || "exécution propre"}.`;
-      }
-    }
-
-    // App réellement vide : aucun check-in, aucune séance, aucun import.
-    if (!hasAnyData()) {
-      if (lower.includes("alimentation") || lower.includes("taille") || lower.includes("gras")) {
-        return "Pas de journal alimentaire dans l'app : la lecture se fait sur le croisement poids / tour de taille, que tu peux commencer à renseigner au check-in. Repères sans compter : protéines à chaque repas, glucides autour des séances.";
-      }
-      return `${decision.label}. L'app n'a encore aucune donnée : commence par le check-in du matin, déclare ta séance, ou importe Apple Santé et ton fichier Garmin. Dès qu'il y a de la matière, j'analyse.`;
-    }
-
-    if (lower.includes("recuperation") || lower.includes("récupération") || lower.includes("score")) {
-      return `Readiness ${readiness.score}/100 : ${readiness.category} (${readiness.trend.toLowerCase()}). Les facteurs principaux sont ${readiness.factors
-        .slice(0, 3)
-        .map((factor) => `${factor.label.toLowerCase()} ${factor.status.toLowerCase()}`)
-        .join(", ")}. Confiance ${readiness.confidence.toLowerCase()}.`;
-    }
-    if (lower.includes("poids") || lower.includes("historique")) {
-      const weight = weightSummary();
-      const week = adherenceStats(7);
-      const parts = [];
-      if (weight.avg7 !== null) {
-        parts.push(
-          `Poids moyen 7 jours : ${formatKg(weight.avg7)}${
-            weight.delta !== null ? ` (${weight.delta > 0 ? "+" : ""}${String(weight.delta).replace(".", ",")} kg vs semaine précédente)` : ""
-          }`
-        );
-      } else {
-        parts.push("Aucun poids renseigné sur 7 jours : ajoute-le au check-in du matin");
-      }
-      parts.push(week.pct !== null ? `adhérence 7 jours ${week.pct} %` : "aucun bilan du soir récent");
-      return `${parts.join(", ")}. Je compare toujours à ta propre tendance, jamais à la population générale.`;
-    }
-    if (lower.includes("adapte") || lower.includes("seance") || lower.includes("séance")) {
-      return `${decision.label}. Ajustement recommandé : ${decision.adjustment}. La modification importante doit rester confirmée par toi avant exécution.`;
-    }
-    if (lower.includes("deload")) {
-      if (isDeloadActive()) {
-        return `Deload en cours, ${deloadDaysLeft()} jour(s) restant(s) : volume -40 %, RPE ≤ 6, aucune série à l'échec. Priorité au sommeil.`;
-      }
-      const proposal = deloadProposal(computeCoachSignals());
-      if (proposal) {
-        return `Un deload me semble justifié : ${proposal.reason} Tu peux le lancer depuis la carte « Deload recommandé » sur l'écran Aujourd'hui.`;
-      }
-      const { signals, ready } = computeCoachSignals();
-      return ready
-        ? `Pas de deload nécessaire pour l'instant : ${signals.length ? `${signals.length} signal(aux) sous surveillance mais pas de concordance suffisante` : "aucun signal de surcharge sur tes tendances multi-jours"}. Je le proposerai quand au moins trois signaux concorderont.`
-        : "Il me faut au moins quelques jours de check-ins et de bilans pour évaluer un besoin de deload.";
-    }
-    if (lower.includes("progression") || lower.includes("stagnation")) {
-      const { signals, ready } = computeCoachSignals();
-      const overload = ready && signals.length ? ` Côté fatigue, je surveille : ${signals.map((signal) => signal.label.toLowerCase()).join(", ")}.` : "";
-      const real = realProgressReply();
-      if (real) return `${real}${overload}`;
-      return `Pas encore assez de séances saisies pour lire une progression par exercice — il m'en faut au moins deux ou trois sur le même mouvement. Enregistre tes séances de musculation et je te dirai ce qui monte et ce qui stagne.${overload}`;
-    }
-    if (lower.includes("alimentation") || lower.includes("taille") || lower.includes("gras")) {
-      // Plus de journal alimentaire : la lecture se fait sur poids + tour de taille.
-      const weight = weightSummary();
-      const trendWeight =
-        weight.avg7 === null
-          ? "Aucun poids saisi ces 7 derniers jours."
-          : `Poids moyen 7 jours : ${formatKg(weight.avg7)}${
-              weight.delta === null
-                ? ""
-                : ` (${weight.delta > 0 ? "+" : ""}${String(weight.delta).replace(".", ",")} kg vs semaine précédente)`
-            }.`;
-      return `Pas de journal alimentaire dans l'app : ce qui tranche entre perte de gras et perte de muscle, c'est le croisement poids / tour de taille. ${trendWeight} ${waistTrendText()} Repères à tenir sans compter : protéines à chaque repas, glucides autour des séances, et pas de restriction agressive pendant un bloc de force.`;
-    }
-    if (lower.includes("semaine") || lower.includes("bloc")) {
-      const week = adherenceStats(7);
-      const blockWeek = programWeek();
-      const load = weekSessionLoad();
-      const where =
-        blockWeek === null
-          ? "Aucun bloc démarré."
-          : blockWeek === 0
-            ? `Phase d'amorce, la semaine 1 démarre le ${formatFrDate(programStartDate())}.`
-            : `Semaine ${blockWeek} sur ${BLOC1.totalWeeks} du bloc, deload prévu en semaine ${BLOC1.deloadWeek}.`;
-      return `${where} Séances de la semaine : ${load.planned ? `${load.done} sur ${load.planned}` : "aucune prévue à ce stade"}. Adhérence 7 jours : ${
-        week.pct !== null ? `${week.pct} % (${week.denom} séance(s) évaluée(s))` : "aucun bilan complété"
-      }. Priorité : régularité, RPE stable, et le mollet qui reste silencieux.`;
-    }
-    if (
-      lower.includes("me place") ||
-      lower.includes("par rapport") ||
-      lower.includes("compar") ||
-      lower.includes("norme") ||
-      lower.includes("moyenne") ||
-      lower.includes("mon âge") ||
-      lower.includes("mon age") ||
-      lower.includes("mon niveau") ||
-      /\b(2[0-9]|3[0-9])\s*ans?\b/.test(lower) ||
-      lower.includes("mes chiffres") ||
-      lower.includes("population") ||
-      lower.includes("mes stats")
-    ) {
-      const health = state.imports?.health;
-      const bits = [];
-      if (health?.rhr) {
-        const rhr = rounded(health.rhr);
-        bits.push(`ta FC de repos est de ${rhr} bpm (repères adulte : sous 60 = bien entraîné, 60-70 = normal, au-dessus de 75 = à surveiller)`);
-      }
-      if (health?.vo2) {
-        const vo2 = rounded(health.vo2);
-        bits.push(`ta VO2max estimée est de ${vo2} (repères homme ~30 ans : au-dessus de 52 = supérieur, 46-52 = bon, 40-45 = moyen)`);
-      }
-      if (health?.hrvMs) {
-        bits.push(`ta HRV tourne autour de ${rounded(health.hrvMs)} ms — elle est trop individuelle pour se comparer entre personnes, elle se lit en tendance sur toi`);
-      }
-      const intro =
-        "Franchement, la meilleure référence à ton âge, c'est toi il y a un mois — pas une moyenne de population. L'app est construite là-dessus : je compare tes chiffres à tes propres tendances, jamais à une norme statistique.";
-      if (bits.length) {
-        return `${intro} Cela dit, pour situer ce que tu as importé : ${bits.join(" ; ")}. Ces repères sont des ordres de grandeur, pas des verdicts : le sens de la pente sur plusieurs semaines compte plus que la valeur d'un jour.`;
-      }
-      return `${intro} Je n'ai pas encore tes marqueurs objectifs (FC de repos, VO2max, HRV) : importe ton export Apple Santé et je pourrai te situer par rapport aux repères d'âge, en plus de ta propre évolution.`;
-    }
-
-    // Question non reconnue : ne pas donner une réponse générique qui semble éluder.
-    return `Je ne suis pas sûr d'avoir saisi ta question. Je réponds surtout sur : ta récupération, ta séance, ton poids, ta progression, un éventuel deload, et ta semaine de bloc — les boutons « Questions utiles » à gauche couvrent l'essentiel. Reformule et je m'aligne.`;
-  }
 
   // ---- Ouverture sur le bon moment de la journée (v4.8) ----
   // L'app n'atterrit plus systématiquement sur la Synthèse : au lancement, elle ouvre

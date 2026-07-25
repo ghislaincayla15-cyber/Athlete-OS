@@ -2898,3 +2898,21 @@ body.light .ring {
   font-size: 0.88rem;
   line-height: 1.5;
 }
+
+/* v5.8.0 — aperçu du briefing transmis au coach */
+.briefing-preview {
+  margin: 16px 0 0;
+  padding: 14px;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-overflow-scrolling: touch;
+}
