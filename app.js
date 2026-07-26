@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.4.0";
+  const APP_VERSION = "7.5.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -190,6 +190,7 @@
     notFullOpen: "", // v7.1.0 : jour dont la version allégée est dépliée
     openMicro: "", // v7.3.0 : micro-session dont le détail est déplié
     manualLogOpen: false, // v7.4.0 : formulaire libre déplié malgré une prescription
+    calWeekOffset: 0, // v7.5.0 : semaine affichée dans le calendrier (0 = celle en cours)
     expandedProgramDay: null,
     journal: {},
     program: {
@@ -6764,6 +6765,145 @@
     `;
   }
 
+  // ---- v7.5.0 : la semaine en calendrier, jour par jour ----
+  // Retour de Ghislain : « on voit qu'on parle de la semaine, ce serait bien
+  // qu'ici on voie le calendrier par jour ». La carte de bloc disait ce qu'il
+  // y avait aujourd'hui et ensuite ; elle ne montrait jamais la semaine. Sept
+  // lignes, une par jour, avec la séance, son créneau et ses micro-sessions.
+  const WEEKDAY_SHORT = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"];
+
+  function mondayOf(key) {
+    const wd = actualWeekday(key);
+    return addDaysKey(key, wd === 0 ? -6 : 1 - wd);
+  }
+
+  // Créneau conseillé, calé sur le rythme déclaré : lever 8 h, coucher 22 h,
+  // séance le matin ou entre 12 h et 14 h. On propose 9 h et on borne la fin
+  // avec la durée réelle de la séance — un créneau daté vaut mieux qu'un
+  // « le matin » qui ne se réserve pas.
+  function slotFor(session) {
+    if (!session || session.kind === "repos") return "";
+    const start = 9 * 60;
+    const end = start + (session.duration || 60);
+    const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+    return `${hhmm(start)}-${hhmm(end)}`;
+  }
+
+  // La journée en une ligne : micro-sessions et séance remises dans l'ordre
+  // des horaires, pour que le calendrier se lise comme un emploi du temps.
+  function dayTimeline(session, micro) {
+    const items = micro.map((m) => ({ time: m.time, label: m.label.toLowerCase() }));
+    const slot = slotFor(session);
+    if (slot) items.push({ time: slot.slice(0, 5), label: "séance", range: slot });
+    return items
+      .sort((a, b) => a.time.localeCompare(b.time))
+      .map((i) => `${i.range || i.time} ${i.label}`)
+      .join(" · ");
+  }
+
+  // Ce que le journal dit du jour, une fois qu'il est passé.
+  function dayStatus(key, session) {
+    const today = dateKey();
+    if (key > today) return { label: "", tone: "" };
+    if (key === today) return { label: "Aujourd'hui", tone: "good" };
+    if (!session || session.kind === "repos") return { label: "", tone: "" };
+    const entry = journalEntry(key);
+    if ((entry?.workouts || []).length) return { label: "Faite", tone: "good" };
+    // ⚠️ `completion` vaut "none" par défaut : sans `touched`, tout jour non
+    // rempli serait affiché « manquée ». C'est `touched` qui fait foi.
+    const ev = entry?.evening;
+    if (!ev?.touched) return { label: "Non renseignée", tone: "watch" };
+    const map = {
+      complete: ["Faite", "good"],
+      adaptee: ["Adaptée", "good"],
+      partial: ["Partielle", "watch"],
+      none: ["Manquée", "bad"],
+      rest: ["Repos", "info"],
+    };
+    const [label, tone] = map[ev.completion] || ["Non renseignée", "watch"];
+    return { label, tone };
+  }
+
+  function weekCalendarDays(offset = 0) {
+    const start = addDaysKey(mondayOf(dateKey()), offset * 7);
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const key = addDaysKey(start, i);
+      const session = programActive(key) ? programSessionFor(key) : null;
+      days.push({ key, session, micro: microFor(key), status: dayStatus(key, session) });
+    }
+    return { start, days };
+  }
+
+  function WeekCalendarCard() {
+    const offset = state.calWeekOffset || 0;
+    const { start, days } = weekCalendarDays(offset);
+    const end = addDaysKey(start, 6);
+    const week = programWeek(start);
+    const sessions = days.filter((d) => d.session && d.session.kind !== "repos");
+    // Même règle que partout ailleurs dans l'app : une séance adaptée compte
+    // comme faite (`programStats()`, l'adhérence). Seules « partielle » et
+    // « manquée » ne comptent pas.
+    const done = sessions.filter((d) => d.status.label === "Faite" || d.status.label === "Adaptée").length;
+    const fmt = (key) =>
+      new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">${
+              inAmorce(start) ? "Semaine d'amorce" : week ? `Semaine ${week} sur ${BLOC1.totalWeeks}` : "Avant le bloc"
+            }</p>
+            <h2>${escapeHtml(fmt(start))} → ${escapeHtml(fmt(end))}</h2>
+          </div>
+          ${StatusBadge(`${done}/${sessions.length} séances`, done === sessions.length && sessions.length ? "good" : "info")}
+        </div>
+        <div class="cal-nav">
+          <button type="button" class="ghost-button" data-action="cal-week" data-delta="-1" aria-label="Semaine précédente">‹</button>
+          <button type="button" class="ghost-button ${offset === 0 ? "muted" : ""}" data-action="cal-week" data-delta="0">${
+            offset === 0 ? "Semaine en cours" : "Revenir à cette semaine"
+          }</button>
+          <button type="button" class="ghost-button" data-action="cal-week" data-delta="1" aria-label="Semaine suivante">›</button>
+        </div>
+        <div class="week-cal">
+          ${days
+            .map((d) => {
+              const isToday = d.key === dateKey();
+              const s = d.session;
+              const rest = !s || s.kind === "repos";
+              const timeline = dayTimeline(rest ? null : s, d.micro);
+              return `
+                <div class="cal-day ${isToday ? "today" : ""} ${rest ? "rest" : ""}">
+                  <div class="cal-date">
+                    <span class="cal-wd">${WEEKDAY_SHORT[actualWeekday(d.key)]}</span>
+                    <span class="cal-num">${new Date(`${d.key}T12:00:00`).getDate()}</span>
+                  </div>
+                  <div class="cal-body">
+                    <div class="cal-title-row">
+                      <strong>${escapeHtml(s ? s.title : "Hors bloc")}</strong>
+                      ${d.status.label ? StatusBadge(d.status.label, d.status.tone) : ""}
+                    </div>
+                    <span class="cal-focus">${escapeHtml(s ? s.focus : "Aucune séance programmée")}</span>
+                    ${
+                      rest
+                        ? ""
+                        : `<span class="cal-meta">${s.duration ? `${s.duration} min` : ""}${
+                            s.rpe ? ` · RPE ${escapeHtml(String(s.rpe))}` : ""
+                          }</span>`
+                    }
+                    ${timeline ? `<span class="cal-micro">${escapeHtml(timeline)}</span>` : ""}
+                  </div>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+        <p class="small-text">Les créneaux suivent ton rythme déclaré (lever 8 h, coucher 22 h, séance le matin ou entre 12 h et 14 h). Le créneau de 9 h est une proposition : la fenêtre 12 h-14 h convient tout aussi bien. Ce qui compte est de faire la séance, pas de la faire à l'heure exacte. Le détail exécutable des micro-sessions est dans Aujourd'hui → Synthèse.</p>
+      </section>
+    `;
+  }
+
   function renderRealProgram() {
     const week = programWeek();
     const phase = programPhase(week);
@@ -6814,6 +6954,7 @@
               : ""
           }
         </section>
+        ${WeekCalendarCard()}
         ${
           stats.planned
             ? ProgressRing({
@@ -7943,6 +8084,10 @@
     if (action === "calf-hops") {
       day().calfTest.hopsOk = actionButton.dataset.value === "ok";
       day().calfTest.done = true;
+    }
+    if (action === "cal-week") {
+      const delta = Number(actionButton.dataset.delta);
+      state.calWeekOffset = delta === 0 ? 0 : (state.calWeekOffset || 0) + delta;
     }
     if (action === "toggle-manual-log") {
       state.manualLogOpen = !state.manualLogOpen;

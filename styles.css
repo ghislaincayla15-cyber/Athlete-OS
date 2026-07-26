@@ -3341,3 +3341,117 @@ body.light .ring {
 .manual-collapsed {
   opacity: 0.82;
 }
+
+/* v7.5.0 — la semaine en calendrier */
+.cal-nav {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cal-nav .ghost-button {
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.cal-nav .ghost-button.muted {
+  color: var(--muted);
+  cursor: default;
+}
+
+.week-cal {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.cal-day {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.cal-day.rest { opacity: 0.62; }
+
+.cal-day.today {
+  border-color: var(--volt, #c0f04a);
+  background: rgba(192, 240, 74, 0.07);
+  opacity: 1;
+}
+
+.cal-date {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 1px;
+  padding-top: 1px;
+}
+
+.cal-wd {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cal-day.today .cal-wd { color: var(--volt, #c0f04a); }
+
+.cal-num {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.cal-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cal-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cal-title-row strong {
+  font-size: 0.87rem;
+  letter-spacing: -0.01em;
+}
+
+.cal-title-row .badge {
+  flex: none;
+  font-size: 0.68rem;
+}
+
+.cal-focus,
+.cal-meta,
+.cal-micro {
+  display: block;
+  font-size: 0.77rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.cal-meta {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.cal-micro {
+  margin-top: 2px;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  font-size: 0.73rem;
+  opacity: 0.9;
+}
