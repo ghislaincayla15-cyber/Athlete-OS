@@ -3455,3 +3455,33 @@ body.light .ring {
   font-size: 0.73rem;
   opacity: 0.9;
 }
+
+/* v7.6.0 — pliométrie : palier, décision et déclaration */
+.notice.calm {
+  border-color: color-mix(in srgb, var(--volt) 26%, transparent);
+  background: var(--green-soft);
+}
+
+.plyo-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 12px 14px 12px 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.plyo-list li strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.86rem;
+  letter-spacing: -0.01em;
+}
+
+.plyo-list li span {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted);
+}

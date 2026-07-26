@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.5.0";
+  const APP_VERSION = "7.6.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -150,6 +150,14 @@
       reason: "",
       comment: "",
     },
+    plyo: {
+      // v7.6.0 : déclaration de la séance de pliométrie du jour
+      done: false,
+      tier: "", // palier réellement exécuté (p0 / p1 / p2 / deload)
+      quality: "", // complete | partial | none
+      calfPain: 0,
+      note: "",
+    },
     calfTest: {
       // v6.1.0 : résultats des tests mollet du lundi (pilotent les paliers pliométrie)
       done: false,
@@ -267,6 +275,7 @@
       morning: { ...base.morning, ...(entry.morning || {}) },
       evening: { ...base.evening, ...(entry.evening || {}) },
       calfTest: { ...base.calfTest, ...(entry.calfTest || {}) },
+      plyo: { ...base.plyo, ...(entry.plyo || {}) },
       nutrition: { ...base.nutrition, ...(entry.nutrition || {}) },
     };
   }
@@ -297,6 +306,7 @@
     if (scope === "evening") return evening();
     if (scope === "nutrition") return nutrition();
     if (scope === "calfTest") return day().calfTest;
+    if (scope === "plyo") return day().plyo;
     if (scope === "day") return day();
     return state[scope];
   }
@@ -1585,11 +1595,11 @@
     return Boolean(start && BLOC1.amorceStart && key >= BLOC1.amorceStart && key < start);
   }
 
-  function plyoTierFor(week) {
-    if (week === BLOC1.deloadWeek) return PLYO.deload;
-    if (week >= 7) return PLYO.p2;
-    if (week >= 3) return PLYO.p1;
-    return PLYO.p0;
+  // v7.6.0 : le palier ne dépend plus du seul numéro de semaine. `plyoDecision`
+  // confronte le calendrier aux séances réellement déclarées et aux tests
+  // mollet du lundi — le protocole du bloc est conditionnel, pas calendaire.
+  function plyoTierFor(week, key = dateKey()) {
+    return PLYO[plyoDecision(week, key).tier] || PLYO.p0;
   }
 
   function programWeek(key = dateKey()) {
@@ -1682,7 +1692,7 @@
 
     let exercises = [];
     if (weekday === 1) exercises.push(CALF_TESTS); // tests mollet chaque lundi, avant Bas A
-    if (base.plyo) exercises = exercises.concat(plyoTierFor(week)); // pliométrie en DÉBUT de Haut A/B
+    if (base.plyo) exercises = exercises.concat(plyoTierFor(week, key)); // pliométrie en DÉBUT de Haut A/B
     exercises = exercises.concat(base.exercises);
     if (isPhasedUp && base.extraExercise) exercises = exercises.concat(base.extraExercise);
 
@@ -2956,6 +2966,196 @@
       state.sessionDraft = { key, rows, openWarmup: "", error: "" };
     }
     return state.sessionDraft;
+  }
+
+  // ---- v7.6.0 : pliométrie déclarée, et paliers pilotés par les faits ----
+  // Deux trous corrigés d'un coup. Le premier : aucun champ n'existait pour
+  // déclarer une séance de pliométrie — impossible de dire « P0 fait, aucune
+  // douleur ». Le second, plus grave : `plyoTierFor()` promouvait au palier
+  // suivant sur le seul numéro de semaine. Le protocole du bloc, lui, est
+  // conditionnel (25-30 élévations unijambe + 15 sautillements indolores).
+  // L'app aurait poussé Ghislain en P1 en S3 même si son mollet avait parlé.
+
+  // Déclaré en conversation le 26/07, avant que le champ n'existe.
+  const PLYO_SEEDS = {
+    "2026-07-24": { done: true, tier: "p0", quality: "complete", calfPain: 0, source: "déclaré au coach le 26/07" },
+  };
+
+  const PLYO_TIER_LABEL = { p0: "P0", p1: "P1", p2: "P2", deload: "deload" };
+
+  function plyoDay(key = dateKey()) {
+    const session = programActive(key) ? programSessionFor(key) : null;
+    return Boolean(session && session.plyo);
+  }
+
+  function plyoLog(key) {
+    const stored = state.journal[key]?.plyo;
+    if (stored?.done) return stored;
+    return PLYO_SEEDS[key] || null;
+  }
+
+  // Séances de pliométrie déclarées sur les N derniers jours, la plus récente
+  // en premier.
+  function plyoHistory(daysBack = 35) {
+    const out = [];
+    for (let i = 0; i < daysBack; i++) {
+      const key = keyOffset(i);
+      const log = plyoLog(key);
+      if (log?.done) out.push({ key, ...log });
+    }
+    return out;
+  }
+
+  // Une séance est « propre » si elle a été menée complète et sans dépasser le
+  // seuil de douleur du bloc.
+  function plyoClean(entry) {
+    return entry.quality === "complete" && Number(entry.calfPain || 0) <= 3;
+  }
+
+  // Dernier test mollet du lundi, et son verdict selon les critères du bloc.
+  function lastCalfTest(daysBack = 14) {
+    for (let i = 0; i < daysBack; i++) {
+      const key = keyOffset(i);
+      const t = state.journal[key]?.calfTest;
+      if (t?.done) {
+        const reps = Number(t.raisesReps);
+        const ok = Number.isFinite(reps) && reps >= 25 && !t.raisesPain && t.hopsOk === true;
+        return { key, test: t, ok, reps };
+      }
+    }
+    return null;
+  }
+
+  // LE cœur : quel palier aujourd'hui, et pourquoi.
+  function plyoDecision(week = programWeek(), key = dateKey()) {
+    if (week === BLOC1.deloadWeek) {
+      return { tier: "deload", held: false, reason: "Semaine de deload : volume de contacts réduit de moitié." };
+    }
+    const calendar = week >= 7 ? "p2" : week >= 3 ? "p1" : "p0";
+    if (calendar === "p0") {
+      return { tier: "p0", held: false, reason: "Palier d'entrée : on installe la qualité de contact avant d'ajouter de l'intensité." };
+    }
+
+    // Un mollet qui a parlé récemment fait redescendre d'un cran, quoi qu'en
+    // dise le calendrier.
+    const recentPain = plyoHistory(14).filter((e) => Number(e.calfPain || 0) > 3);
+    if (recentPain.length) {
+      const back = calendar === "p2" ? "p1" : "p0";
+      return {
+        tier: back,
+        held: true,
+        reason: `Douleur mollet > 3/10 déclarée le ${formatShortDate(recentPain[0].key)} en pliométrie : retour au palier ${PLYO_TIER_LABEL[back]} jusqu'à deux séances propres d'affilée.`,
+      };
+    }
+
+    const previous = calendar === "p2" ? "p1" : "p0";
+    const clean = plyoHistory(35).filter((e) => e.tier === previous && plyoClean(e)).length;
+    if (clean < 4) {
+      return {
+        tier: previous,
+        held: true,
+        reason: `${clean} séance${clean > 1 ? "s" : ""} ${PLYO_TIER_LABEL[previous]} propre${clean > 1 ? "s" : ""} déclarée${clean > 1 ? "s" : ""} sur 4 attendues : le palier ${PLYO_TIER_LABEL[calendar]} attend. Le calendrier ne fait pas la progression, les séances la font.`,
+      };
+    }
+
+    const calf = lastCalfTest();
+    if (!calf) {
+      return {
+        tier: previous,
+        held: true,
+        reason: `Aucun test mollet enregistré depuis 14 jours : impossible de valider le passage en ${PLYO_TIER_LABEL[calendar]}. Fais-les lundi matin.`,
+      };
+    }
+    if (!calf.ok) {
+      return {
+        tier: previous,
+        held: true,
+        reason: `Tests mollet du ${formatShortDate(calf.key)} non validés (${calf.reps || "?"} élévations, objectif 25-30 sans douleur) : on reste en ${PLYO_TIER_LABEL[previous]}.`,
+      };
+    }
+    return {
+      tier: calendar,
+      held: false,
+      reason: `${clean} séances ${PLYO_TIER_LABEL[previous]} propres et tests mollet validés le ${formatShortDate(calf.key)} : passage en ${PLYO_TIER_LABEL[calendar]} mérité.`,
+    };
+  }
+
+  function PlyoCard(key = dateKey()) {
+    if (!plyoDay(key)) return "";
+    const entry = day(key).plyo;
+    const decision = plyoDecision(programWeek(key), key);
+    const tierName = PLYO_TIER_LABEL[decision.tier];
+    return `
+      <section class="card">
+        <div class="card-head card-head--save">
+          <div>
+            <p class="eyebrow">Pliométrie · palier ${escapeHtml(tierName)}</p>
+            <h2>En début de séance, à froid mais échauffé</h2>
+          </div>
+          <div class="head-badges">${
+            entry.done
+              ? StatusBadge(Number(entry.calfPain || 0) > 3 ? "Douleur signalée" : "Déclarée", Number(entry.calfPain || 0) > 3 ? "bad" : "good")
+              : StatusBadge("À déclarer", "watch")
+          }${SaveBadge()}</div>
+        </div>
+        <div class="notice ${decision.held ? "" : "calm"}">
+          <strong>${decision.held ? `Palier maintenu en ${escapeHtml(tierName)}` : `Palier ${escapeHtml(tierName)}`}</strong>
+          <p>${escapeHtml(decision.reason)}</p>
+        </div>
+        <ol class="plyo-list">
+          ${plyoTierFor(programWeek(key), key)
+            .map(
+              (ex) => `
+              <li>
+                <strong>${escapeHtml(ex.name.replace("Pliométrie · ", ""))}</strong>
+                <span>${escapeHtml(ex.detail)}</span>
+              </li>
+            `
+            )
+            .join("")}
+        </ol>
+        <div class="form-grid" style="margin-top:14px">
+          <div class="field full">
+            <span class="label">Tu l'as faite ?</span>
+            <div class="segmented">
+              ${[
+                ["complete", "Complète"],
+                ["partial", "Écourtée"],
+                ["none", "Pas faite"],
+              ]
+                .map(
+                  ([value, label]) =>
+                    `<button type="button" class="segmented-button ${entry.quality === value ? "active" : ""}" data-action="plyo-quality" data-value="${value}">${label}</button>`
+                )
+                .join("")}
+            </div>
+          </div>
+          <div class="field full">
+            <label for="plyo-pain">Douleur mollet pendant et après : ${escapeHtml(String(entry.calfPain ?? 0))}/10</label>
+            <input id="plyo-pain" type="range" min="0" max="10" step="1" value="${escapeHtml(String(entry.calfPain ?? 0))}" data-scope="plyo" data-key="calfPain" data-type="number" />
+            <span class="small-text">Au-delà de 3/10, on arrête la séance et le palier redescend automatiquement d'un cran. Ce n'est pas un échec : c'est le protocole qui fonctionne.</span>
+          </div>
+          <div class="field full">
+            <label for="plyo-note">Remarque (facultatif)</label>
+            <input id="plyo-note" type="text" value="${escapeHtml(entry.note || "")}" data-scope="plyo" data-key="note" placeholder="Sensation, côté, surface..." />
+          </div>
+        </div>
+        ${
+          entry.done
+            ? `<p class="small-text">Déclarée. ${escapeHtml(plyoProgressLine(decision))}</p>`
+            : `<p class="small-text">Choisis « Complète », « Écourtée » ou « Pas faite » : c'est cette déclaration qui pilote le passage au palier suivant.</p>`
+        }
+      </section>
+    `;
+  }
+
+  function plyoProgressLine(decision) {
+    if (decision.tier === "p2" || decision.tier === "deload") return "";
+    const target = decision.tier === "p0" ? "p0" : "p1";
+    const clean = plyoHistory(35).filter((e) => e.tier === target && plyoClean(e)).length;
+    const missing = Math.max(0, 4 - clean);
+    if (!missing) return `Les 4 séances ${PLYO_TIER_LABEL[target]} propres sont acquises — reste les tests mollet du lundi à valider.`;
+    return `${clean}/4 séances ${PLYO_TIER_LABEL[target]} propres. Encore ${missing} avant d'envisager le palier suivant.`;
   }
 
   function PrescriptionCard(key = dateKey()) {
@@ -6447,6 +6647,7 @@
         <div class="page-grid">
           ${QuickSessionCard()}
           ${CalfTestCard()}
+          ${PlyoCard()}
           ${PrescriptionCard()}
           ${RunStepsCard()}
           ${RunPrescriptionCard()}
@@ -8085,6 +8286,22 @@
       day().calfTest.hopsOk = actionButton.dataset.value === "ok";
       day().calfTest.done = true;
     }
+    if (action === "plyo-quality") {
+      const value = actionButton.dataset.value;
+      day().plyo.quality = value;
+      day().plyo.done = true;
+      day().plyo.tier = plyoDecision().tier;
+      if (value === "none") day().plyo.calfPain = 0;
+      logDecision(
+        "plyo",
+        `Pliométrie ${PLYO_TIER_LABEL[day().plyo.tier] || ""} du ${formatShortDate(dateKey())} : ${
+          { complete: "complète", partial: "écourtée", none: "non faite" }[value]
+        }`,
+        "Déclaration de l'athlète",
+        "Saisie manuelle",
+        "Eleve"
+      );
+    }
     if (action === "cal-week") {
       const delta = Number(actionButton.dataset.delta);
       state.calWeekOffset = delta === 0 ? 0 : (state.calWeekOffset || 0) + delta;
@@ -8510,6 +8727,7 @@
     if (scope === "evening") evening().touched = true;
     if (scope === "nutrition") nutrition().touched = true;
     if (scope === "calfTest") day().calfTest.done = true; // saisir un résultat vaut « tests faits »
+    if (scope === "plyo" && day().plyo.quality) day().plyo.done = true;
   }
 
   function updateStateFromField(target) {
