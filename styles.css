@@ -3079,3 +3079,86 @@ body.light .ring {
   color: var(--bad, #F0684A);
   font-weight: 700;
 }
+
+/* v7.0.0 — séance prescrite, saisie par écart */
+.presc-list { display: grid; gap: 10px; margin: 14px 0; }
+
+.presc-row {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.presc-row.progress { border-left: 3px solid var(--volt, #C0F04A); }
+.presc-row.undercalibrated { border-left: 3px solid var(--watch, #F0B84A); }
+.presc-row.calibrate { border-left: 3px solid var(--muted, #8a8f98); }
+
+.presc-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.presc-head strong { font-size: 0.95rem; letter-spacing: -0.01em; }
+.presc-target { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+
+.presc-why { margin: 6px 0 10px; color: var(--muted); font-size: 0.79rem; line-height: 1.45; }
+.presc-source { opacity: 0.7; }
+
+.presc-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.presc-fields label { display: grid; gap: 4px; }
+.presc-fields span { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.presc-fields input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.presc-fields label.needed input { border-color: var(--watch, #F0B84A); }
+
+.presc-rest, .presc-toggle {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.79rem;
+  cursor: pointer;
+}
+.presc-toggle { border-style: dashed; }
+.presc-detail { margin-top: 10px; color: var(--muted); font-size: 0.79rem; line-height: 1.5; }
+.presc-detail p { margin: 0 0 4px; }
+
+.rest-bar {
+  position: sticky;
+  top: 8px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--volt, #C0F04A);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.rest-bar.over { border-color: var(--watch, #F0B84A); }
+.rest-time { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--volt, #C0F04A); }
+.rest-bar.over .rest-time { color: var(--watch, #F0B84A); }
+.rest-label { flex: 1; color: var(--muted); font-size: 0.82rem; }
+
+@media (max-width: 420px) {
+  .presc-fields { grid-template-columns: repeat(2, 1fr); }
+}
+.presc-error {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--watch, #F0B84A);
+  border-radius: 10px;
+  color: var(--watch, #F0B84A);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}

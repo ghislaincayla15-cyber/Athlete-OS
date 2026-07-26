@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "6.1.0";
+  const APP_VERSION = "7.0.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -184,6 +184,9 @@
     openExercise: null,
     openExerciseDetail: "",
     openMetric: null,
+    sessionDraft: null, // v7.0.0 : brouillon de séance pré-rempli depuis la prescription
+    runDraft: null, // v7.0.0 : saisie de course par écart
+    restTimer: null, // v7.0.0 : minuteur de repos { name, endsAt }
     expandedProgramDay: null,
     journal: {},
     program: {
@@ -644,6 +647,20 @@
       }
       if (String(target[key] ?? "") === String(value ?? "")) return;
       updateStateFromField(input);
+      changed = true;
+    });
+
+    document.querySelectorAll("[data-presc]").forEach((input) => {
+      const draft = state.sessionDraft;
+      const row = draft?.rows?.[input.dataset.presc];
+      if (!row || String(row[input.dataset.field] ?? "") === String(input.value ?? "")) return;
+      row[input.dataset.field] = input.value;
+      changed = true;
+    });
+
+    document.querySelectorAll("[data-run-draft]").forEach((input) => {
+      if (!state.runDraft || String(state.runDraft[input.dataset.runDraft] ?? "") === String(input.value ?? "")) return;
+      state.runDraft[input.dataset.runDraft] = input.value;
       changed = true;
     });
 
@@ -2523,6 +2540,338 @@
   function positionIn(value, min, max) {
     if (!Number.isFinite(value)) return null;
     return clamp(((value - min) / (max - min)) * 100, 0, 100);
+  }
+
+  // ---- v7.0.0 : moteur de prescription et saisie par écart ----
+  // Principe du plan v8 : l'app connaît le plan, affiche la charge du jour
+  // pré-remplie, et l'athlète ne saisit que l'écart et le ressenti. Jamais de
+  // page blanche — c'est ce qui a manqué depuis le début (séances closes à 0 min
+  // sans RPE, développé couché fait mais jamais saisi).
+
+  // Derniers top sets connus hors journal (déclarés au coach en conversation).
+  // Servent d'amorce tant que l'exercice n'a pas été saisi dans l'app.
+  const PRESCRIPTION_SEEDS = {
+    "developpe couche": { weight: 80, reps: 6, rpe: 8, source: "déclaré au coach le 24/07" },
+  };
+
+  const LOWER_BODY_HINTS = ["squat", "presse", "fente", "leg curl", "mollet", "souleve", "hip thrust", "bulgare", "abduction", "lombaire", "jambe"];
+  const BARBELL_HINTS = ["squat", "developpe couche", "developpe militaire", "souleve de terre", "barre ez", "rowing barre", "hip thrust"];
+  const PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
+  const BAR_KG = 20;
+
+  function normalizeLiftName(name) {
+    return String(name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/\([^)]*\)/g, "")
+      .replace(/[^a-z0-9 ]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function isLowerBody(name) {
+    const n = normalizeLiftName(name);
+    return LOWER_BODY_HINTS.some((hint) => n.includes(hint));
+  }
+
+  function isBarbell(name) {
+    const n = normalizeLiftName(name);
+    return BARBELL_HINTS.some((hint) => n.includes(hint));
+  }
+
+  // « 4 × 4-6 · RPE 7-8 · repos 3 min » → { sets, repsMin, repsMax, rpe, restSec }
+  function parseDetail(detail) {
+    const text = String(detail || "");
+    const out = { sets: null, repsMin: null, repsMax: null, rpe: null, restSec: null };
+
+    const setsReps = text.match(/(\d+)\s*[×x]\s*(\d+)(?:\s*-\s*(\d+))?/);
+    if (setsReps) {
+      out.sets = Number(setsReps[1]);
+      out.repsMin = Number(setsReps[2]);
+      out.repsMax = setsReps[3] ? Number(setsReps[3]) : Number(setsReps[2]);
+    }
+
+    const rpe = text.match(/RPE\s*(\d+(?:[.,]\d+)?)(?:\s*-\s*(\d+(?:[.,]\d+)?))?/i);
+    if (rpe) {
+      const high = rpe[2] || rpe[1];
+      out.rpe = Number(String(high).replace(",", "."));
+    }
+
+    const restMin = text.match(/repos\s*(\d+(?:\s*-\s*\d+)?)\s*min/i);
+    const restSec = text.match(/repos\s*(\d+)\s*s/i);
+    if (restMin) out.restSec = Number(String(restMin[1]).split("-")[0].trim()) * 60;
+    else if (restSec) out.restSec = Number(restSec[1]);
+
+    return out;
+  }
+
+  function lastTopSetFor(name) {
+    const target = normalizeLiftName(name);
+    let best = null;
+    liftHistories().forEach((sessions, logged) => {
+      if (normalizeLiftName(logged) !== target) return;
+      const last = sessions[sessions.length - 1];
+      if (!best || last.date > best.date) best = { ...last, source: `saisi le ${formatShortDate(last.date)}` };
+    });
+    if (best) return best;
+    const seed = PRESCRIPTION_SEEDS[target];
+    return seed ? { ...seed, date: null, source: seed.source } : null;
+  }
+
+  function roundLoad(value) {
+    return Math.round(value * 4) / 4 >= 0 ? Math.round(value / 2.5) * 2.5 : value;
+  }
+
+  // Double progression : haut de fourchette atteint au RPE cible → on monte.
+  // RPE 2 crans sous la cible → la charge est sous-calibrée, saut plus franc.
+  function prescribeLoad(name, spec, last) {
+    const step = isLowerBody(name) ? 5 : 2.5;
+    if (!last || !Number.isFinite(Number(last.weight))) {
+      return { weight: null, status: "calibrate", why: "Aucun top set connu : calibre au feeling à RPE 7 et note la charge." };
+    }
+    const weight = Number(last.weight);
+    const reps = Number(last.reps);
+    const rpe = Number(last.rpe);
+    const repsMax = spec.repsMax ?? reps;
+    const rpeTarget = spec.rpe ?? 8;
+
+    if (weight === 0) {
+      return {
+        weight: 0,
+        status: "bodyweight",
+        why: `Poids de corps. Dernière fois ${reps} reps${Number.isFinite(rpe) ? ` à RPE ${rpe}` : ""} — vise le haut de la fourchette avant de lester.`,
+      };
+    }
+
+    if (Number.isFinite(rpe) && rpe <= rpeTarget - 2) {
+      const jump = step * 2;
+      return {
+        weight: roundLoad(weight + jump),
+        status: "undercalibrated",
+        why: `Dernier RPE ${rpe} pour une cible ${rpeTarget} : charge nettement sous-calibrée, on monte de ${String(jump).replace(".", ",")} kg.`,
+      };
+    }
+
+    if (Number.isFinite(reps) && reps >= repsMax && (!Number.isFinite(rpe) || rpe <= rpeTarget)) {
+      return {
+        weight: roundLoad(weight + step),
+        status: "progress",
+        why: `Haut de fourchette atteint (${reps} reps à RPE ${Number.isFinite(rpe) ? rpe : "?"}) → +${String(step).replace(".", ",")} kg.`,
+      };
+    }
+
+    return {
+      weight,
+      status: "hold",
+      why: `Charge maintenue : vise ${repsMax} reps à RPE ${rpeTarget} avant d'ajouter du poids.`,
+    };
+  }
+
+  function prescriptionFor(key = dateKey()) {
+    const session = programActive(key) ? programSessionFor(key) : null;
+    if (!session || session.kind !== "muscu") return [];
+    return (session.exercises || [])
+      .filter((item) => !/^Tests mollet/i.test(item.name) && !/^Pliométrie/i.test(item.name))
+      .map((item) => {
+        const spec = parseDetail(item.detail);
+        const last = lastTopSetFor(item.name);
+        const load = prescribeLoad(item.name, spec, last);
+        return { name: item.name, detail: item.detail, spec, last, ...load };
+      });
+  }
+
+  // ---- Calculateur de disques et montée en gamme (adoptés du benchmark) ----
+  function plateBreakdown(total) {
+    const perSide = (Number(total) - BAR_KG) / 2;
+    if (!Number.isFinite(perSide) || perSide <= 0) return null;
+    let rest = perSide;
+    const used = [];
+    PLATES.forEach((plate) => {
+      while (rest >= plate - 0.001) {
+        used.push(plate);
+        rest = Math.round((rest - plate) * 100) / 100;
+      }
+    });
+    if (rest > 0.01) return null; // charge non réalisable avec les disques standards
+    const counts = used.reduce((acc, plate) => {
+      acc[plate] = (acc[plate] || 0) + 1;
+      return acc;
+    }, {});
+    const label = Object.entries(counts)
+      .sort((a, b) => Number(b[0]) - Number(a[0]))
+      .map(([plate, n]) => `${n}×${String(plate).replace(".", ",")}`)
+      .join(" + ");
+    return `barre ${BAR_KG} + ${label} de chaque côté`;
+  }
+
+  function warmupRamp(topWeight, name) {
+    const top = Number(topWeight);
+    if (!Number.isFinite(top) || top < 40) return [];
+    const bar = isBarbell(name) ? [{ weight: BAR_KG, reps: 10, label: "barre à vide" }] : [];
+    return [
+      ...bar,
+      { weight: roundLoad(top * 0.4), reps: 8 },
+      { weight: roundLoad(top * 0.6), reps: 5 },
+      { weight: roundLoad(top * 0.8), reps: 3 },
+    ].filter((set, index, list) => index === 0 || set.weight > list[index - 1].weight);
+  }
+
+  // ---- Brouillon de séance pré-rempli ----
+  function sessionDraft(key = dateKey()) {
+    if (!state.sessionDraft || state.sessionDraft.key !== key) {
+      const rows = {};
+      prescriptionFor(key).forEach((item) => {
+        rows[item.name] = {
+          weight: item.weight === null ? "" : item.weight,
+          reps: item.spec.repsMax ?? "",
+          sets: item.spec.sets ?? "",
+          rpe: "",
+        };
+      });
+      state.sessionDraft = { key, rows, openWarmup: "", error: "" };
+    }
+    return state.sessionDraft;
+  }
+
+  function PrescriptionCard(key = dateKey()) {
+    const items = prescriptionFor(key);
+    if (!items.length) return "";
+    const draft = sessionDraft(key);
+    const alreadyLogged = (day(key).workouts || []).some((w) => w.type === "muscu");
+    const missingRpe = items.filter((item) => !draft.rows[item.name]?.rpe).length;
+
+    return `
+      <section class="card">
+        <div class="card-head card-head--save">
+          <div>
+            <p class="eyebrow">Séance prescrite</p>
+            <h2>Ce que tu dois faire aujourd'hui</h2>
+          </div>
+          <div class="head-badges">${
+            alreadyLogged ? StatusBadge("Déjà enregistrée", "good") : missingRpe ? StatusBadge(`${missingRpe} RPE à remplir`, "watch") : StatusBadge("Prêt à enregistrer", "good")
+          }${SaveBadge()}</div>
+        </div>
+        <p class="small-text">Les charges sont calculées depuis tes dernières séances et la double progression du bloc. Corrige uniquement ce qui a différé, et renseigne le RPE réel — c'est lui qui pilote la séance suivante.</p>
+        <div class="presc-list">
+          ${items
+            .map((item) => {
+              const row = draft.rows[item.name] || { weight: "", reps: "", sets: "", rpe: "" };
+              const plates = item.weight ? plateBreakdown(item.weight) : null;
+              const ramp = warmupRamp(item.weight, item.name);
+              const open = draft.openWarmup === item.name;
+              return `
+                <article class="presc-row ${item.status}">
+                  <div class="presc-head">
+                    <strong>${escapeHtml(item.name)}</strong>
+                    <span class="presc-target">${escapeHtml(item.spec.sets ? `${item.spec.sets} × ${item.spec.repsMin}${item.spec.repsMax !== item.spec.repsMin ? `-${item.spec.repsMax}` : ""}` : "")}${item.spec.rpe ? ` · RPE ${String(item.spec.rpe).replace(".", ",")}` : ""}${item.spec.restSec ? ` · repos ${item.spec.restSec >= 60 ? `${Math.round(item.spec.restSec / 60)} min` : `${item.spec.restSec} s`}` : ""}</span>
+                  </div>
+                  <p class="presc-why">${escapeHtml(item.why)}${item.last?.source ? ` <span class="presc-source">(${escapeHtml(item.last.source)})</span>` : ""}</p>
+                  <div class="presc-fields">
+                    <label><span>kg</span><input type="number" inputmode="decimal" step="0.5" min="0" value="${escapeHtml(String(row.weight))}" data-presc="${escapeHtml(item.name)}" data-field="weight" placeholder="${item.weight === null ? "?" : item.weight}" /></label>
+                    <label><span>reps</span><input type="number" inputmode="numeric" min="1" max="50" value="${escapeHtml(String(row.reps))}" data-presc="${escapeHtml(item.name)}" data-field="reps" /></label>
+                    <label><span>séries</span><input type="number" inputmode="numeric" min="1" max="12" value="${escapeHtml(String(row.sets))}" data-presc="${escapeHtml(item.name)}" data-field="sets" /></label>
+                    <label class="${row.rpe ? "" : "needed"}"><span>RPE</span><input type="number" inputmode="decimal" step="0.5" min="1" max="10" value="${escapeHtml(String(row.rpe))}" data-presc="${escapeHtml(item.name)}" data-field="rpe" placeholder="—" /></label>
+                  </div>
+                  ${
+                    item.spec.restSec
+                      ? `<button type="button" class="ghost-button presc-rest" data-action="start-rest" data-seconds="${item.spec.restSec}" data-name="${escapeHtml(item.name)}">⏱ Lancer le repos (${item.spec.restSec >= 60 ? `${Math.round(item.spec.restSec / 60)} min` : `${item.spec.restSec} s`})</button>`
+                      : ""
+                  }
+                  ${
+                    ramp.length || plates
+                      ? `<button type="button" class="presc-toggle" data-action="toggle-warmup" data-name="${escapeHtml(item.name)}">${open ? "Masquer" : "Échauffement et disques"} ›</button>`
+                      : ""
+                  }
+                  ${
+                    open
+                      ? `<div class="presc-detail">
+                          ${plates ? `<p><strong>${String(item.weight).replace(".", ",")} kg</strong> = ${escapeHtml(plates)}</p>` : ""}
+                          ${
+                            ramp.length
+                              ? `<p>Montée en gamme : ${ramp.map((set) => `${String(set.weight).replace(".", ",")} kg × ${set.reps}`).join(" → ")} → séries de travail.</p>`
+                              : ""
+                          }
+                        </div>`
+                      : ""
+                  }
+                </article>
+              `;
+            })
+            .join("")}
+        </div>
+        ${draft.error ? `<p class="presc-error">${escapeHtml(draft.error)}</p>` : ""}
+        <button type="button" class="primary-button" data-action="save-prescribed">${icon("check")}Enregistrer la séance</button>
+      </section>
+    `;
+  }
+
+  function RestTimerBar() {
+    const timer = state.restTimer;
+    if (!timer?.endsAt) return "";
+    const remaining = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
+    const min = Math.floor(remaining / 60);
+    const sec = String(remaining % 60).padStart(2, "0");
+    return `
+      <div class="rest-bar ${remaining === 0 ? "over" : ""}">
+        <span class="rest-time">${min}:${sec}</span>
+        <span class="rest-label">${remaining === 0 ? "Repos terminé — série suivante" : `Repos · ${escapeHtml(timer.name || "")}`}</span>
+        <button type="button" class="ghost-button" data-action="stop-rest">Arrêter</button>
+      </div>
+    `;
+  }
+
+  // ---- Course : saisie par écart plutôt que retape des chiffres ----
+  function runPrescription(key = dateKey()) {
+    const session = programActive(key) ? programSessionFor(key) : null;
+    if (!session || session.kind !== "course") return null;
+    return { title: session.title, focus: session.focus, duration: session.duration, detail: session.detail || "" };
+  }
+
+  function RunPrescriptionCard(key = dateKey()) {
+    const presc = runPrescription(key);
+    if (!presc) return "";
+    const draft = state.runDraft && state.runDraft.key === key ? state.runDraft : { key, compliance: "", rpe: "", calf: "", error: "" };
+    state.runDraft = draft;
+    const alreadyLogged = (day(key).workouts || []).some((w) => w.type === "course");
+    return `
+      <section class="card">
+        <div class="card-head card-head--save">
+          <div>
+            <p class="eyebrow">Course prescrite</p>
+            <h2>${escapeHtml(presc.title)}</h2>
+          </div>
+          <div class="head-badges">${alreadyLogged ? StatusBadge("Déjà enregistrée", "good") : StatusBadge(`${presc.duration} min prévues`, "info")}${SaveBadge()}</div>
+        </div>
+        <p class="small-text">${escapeHtml(presc.focus || "")}</p>
+        <div class="form-grid">
+          <div class="field full">
+            <span class="label">Par rapport à ce qui était prévu</span>
+            <div class="segmented">
+              ${["moins", "conforme", "plus"]
+                .map(
+                  (value) =>
+                    `<button type="button" class="segmented-button ${draft.compliance === value ? "active" : ""}" data-action="run-compliance" data-value="${value}">${
+                      value === "moins" ? "Moins" : value === "plus" ? "Plus" : "Conforme"
+                    }</button>`
+                )
+                .join("")}
+            </div>
+          </div>
+          <div class="field">
+            <label for="run-rpe">RPE ressenti</label>
+            <input id="run-rpe" type="number" inputmode="decimal" step="0.5" min="1" max="10" value="${escapeHtml(String(draft.rpe))}" data-run-draft="rpe" placeholder="7" />
+          </div>
+          <div class="field">
+            <label for="run-calf">Douleur mollet (0-10)</label>
+            <input id="run-calf" type="number" inputmode="numeric" min="0" max="10" value="${escapeHtml(String(draft.calf))}" data-run-draft="calf" placeholder="0" />
+          </div>
+        </div>
+        ${draft.error ? `<p class="presc-error">${escapeHtml(draft.error)}</p>` : ""}
+        <button type="button" class="primary-button" data-action="save-prescribed-run">${icon("check")}Enregistrer la course</button>
+        <p class="small-text">Distance, allure et FC viennent de ta montre : inutile de les retaper ici. Si tu veux les saisir malgré tout, le journal des séances plus bas reste disponible.</p>
+      </section>
+    `;
   }
 
   // ---- v6.1.0 : saisie des tests mollet du lundi ----
@@ -5554,6 +5903,8 @@
             ${RingsRow(readiness)}
             ${QuickSessionCard()}
             ${CalfTestCard()}
+            ${PrescriptionCard()}
+            ${RunPrescriptionCard()}
             ${MicroCard()}
             ${WeatherCard()}
             ${MissingCard()}
@@ -5578,6 +5929,8 @@
         <div class="page-grid">
           ${QuickSessionCard()}
           ${CalfTestCard()}
+          ${PrescriptionCard()}
+          ${RunPrescriptionCard()}
           ${MicroCard()}
           ${WeatherCard()}
           <div class="section-grid">
@@ -6481,7 +6834,9 @@
     (entry.workouts || []).forEach((workout) => {
       if (workout.type === "course") {
         const bits = [];
-        if (Number(workout.duration) > 0) bits.push(`${workout.duration} min`);
+        if (workout.prescribed && workout.compliance) bits.push(`${workout.compliance} vs prévu`);
+        if (workout.prescribed && workout.rpe) bits.push(`RPE ${workout.rpe}`);
+        if (Number(workout.duration) > 0) bits.push(`${workout.duration} min${workout.prescribed ? " (estimé depuis le plan)" : ""}`);
         if (Number(workout.km) > 0) bits.push(`${String(workout.km).replace(".", ",")} km`);
         if (Number(workout.duration) > 0 && Number(workout.km) > 0) bits.push(formatPace(workout.duration / workout.km));
         if (Number(workout.hr) > 0) bits.push(`FC ${workout.hr}`);
@@ -6489,7 +6844,7 @@
         out.push(`- Course : ${bits.join(" · ") || "sans détail"}`);
         return;
       }
-      out.push("- Muscu :");
+      out.push(`- Muscu${workout.prescribed ? " (saisie par écart sur la prescription)" : ""} :`);
       (workout.exercises || []).forEach((ex) => {
         const charge = Number(ex.weight) > 0 ? `${ex.weight} kg` : "poids de corps";
         const rpe = ex.rpe ? ` RPE ${ex.rpe}` : " RPE non renseigné";
@@ -6521,6 +6876,14 @@
 
     const session = programSessionFor(today);
     if (session) lines.push(`**Séance prévue aujourd'hui** : ${session.title || session.name || "—"}`);
+    const presc = prescriptionFor(today);
+    if (presc.length) {
+      lines.push("");
+      lines.push("**Charges prescrites aujourd'hui** (double progression) :");
+      presc.forEach((item) => {
+        lines.push(`- ${item.name} : ${item.weight === null ? "à calibrer" : `${String(item.weight).replace(".", ",")} kg`} — ${item.why}`);
+      });
+    }
 
     if (state.deload?.activeUntil) lines.push(`**Deload actif** jusqu'au ${formatFrDate(state.deload.activeUntil)}`);
 
@@ -6830,6 +7193,7 @@
         </main>
         <nav class="mobile-nav" aria-label="Navigation mobile">${renderNav("mobile")}</nav>
         ${renderSettings()}
+        ${RestTimerBar()}
         ${ExerciseSheetModal()}
         ${MetricSheetModal()}
       </div>
@@ -6953,6 +7317,76 @@
     if (action === "close-exercise") {
       state.openExercise = null;
       state.openExerciseDetail = "";
+    }
+    if (action === "toggle-warmup") {
+      harvestPrescribed();
+      const draft = sessionDraft();
+      draft.openWarmup = draft.openWarmup === actionButton.dataset.name ? "" : actionButton.dataset.name;
+    }
+    if (action === "start-rest") {
+      state.restTimer = { name: actionButton.dataset.name, endsAt: Date.now() + Number(actionButton.dataset.seconds) * 1000 };
+      scheduleRestTick();
+    }
+    if (action === "stop-rest") {
+      state.restTimer = null;
+    }
+    if (action === "run-compliance") {
+      harvestPrescribed();
+      if (state.runDraft) state.runDraft.compliance = actionButton.dataset.value;
+    }
+    if (action === "save-prescribed") {
+      harvestPrescribed();
+      const draft = sessionDraft();
+      const exercises = Object.entries(draft.rows)
+        .map(([name, row]) => ({
+          name,
+          weight: Number(row.weight),
+          reps: Number(row.reps),
+          sets: Number(row.sets) || 1,
+          rpe: row.rpe === "" ? "" : Number(row.rpe),
+        }))
+        .filter((ex) => Number.isFinite(ex.weight) && ex.weight >= 0 && ex.reps > 0);
+      if (!exercises.length) {
+        draft.error = "Il me faut au moins une charge et un nombre de répétitions pour enregistrer la séance.";
+      } else if (exercises.some((ex) => ex.rpe === "")) {
+        draft.error = "Renseigne le RPE de chaque exercice : c'est lui qui calcule la charge de la séance suivante.";
+      } else {
+        draft.error = "";
+        day().workouts.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type: "muscu",
+          prescribed: true,
+          exercises,
+        });
+        state.sessionDraft = null;
+        addCoachMessage("coach", `Séance enregistrée (${exercises.length} exercices avec RPE). Les charges de la prochaine séance sont recalculées.`);
+      }
+    }
+    if (action === "save-prescribed-run") {
+      harvestPrescribed();
+      const presc = runPrescription();
+      const draft = state.runDraft;
+      if (!presc || !draft?.compliance) {
+        if (draft) draft.error = "Indique d'abord si la course a été conforme, plus longue ou plus courte que prévu.";
+      } else {
+        draft.error = "";
+        const factor = draft.compliance === "plus" ? 1.15 : draft.compliance === "moins" ? 0.7 : 1;
+        day().workouts.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type: "course",
+          km: "",
+          duration: Math.round(presc.duration * factor),
+          hr: "",
+          kind: /fraction/i.test(presc.title) ? "fractionne" : "zone2",
+          prescribed: true,
+          compliance: draft.compliance,
+          rpe: draft.rpe === "" ? "" : Number(draft.rpe),
+        });
+        if (draft.calf !== "") evening().calfPain = Number(draft.calf);
+        markScopeTouched("evening");
+        state.runDraft = null;
+        addCoachMessage("coach", `Course enregistrée (${draft.compliance} par rapport aux ${presc.duration} min prévues). Les chiffres exacts restent sur ta montre.`);
+      }
     }
     if (action === "calf-hops") {
       day().calfTest.hopsOk = actionButton.dataset.value === "ok";
@@ -7287,6 +7721,21 @@
     }
   }
 
+  // v7.0.0 : récupère les champs pré-remplis (séance prescrite + course par écart)
+  function harvestPrescribed() {
+    const draft = sessionDraft();
+    document.querySelectorAll("[data-presc]").forEach((input) => {
+      const row = draft.rows[input.dataset.presc];
+      if (!row) return;
+      row[input.dataset.field] = input.value;
+    });
+    if (state.runDraft) {
+      document.querySelectorAll("[data-run-draft]").forEach((input) => {
+        state.runDraft[input.dataset.runDraft] = input.value;
+      });
+    }
+  }
+
   function harvestDraft() {
     document.querySelectorAll("[data-draft-ex]").forEach((input) => {
       const index = Number(input.dataset.draftEx);
@@ -7304,6 +7753,13 @@
     // Journal des séances : la saisie brouillon est désormais sauvegardée à la frappe.
     if (target.dataset.draftEx !== undefined || target.dataset.draftCourse !== undefined) {
       harvestDraft();
+      persistSoon();
+      return;
+    }
+
+    // v7.0.0 : brouillon de séance prescrite et de course par écart
+    if (target.dataset.presc !== undefined || target.dataset.runDraft !== undefined) {
+      harvestPrescribed();
       persistSoon();
       return;
     }
@@ -7365,6 +7821,27 @@
     }
     scopeTarget(scope)[key] = value;
     markScopeTouched(scope);
+  }
+
+  // v7.0.0 : le minuteur de repos a besoin d'un battement, l'app ne re-rend
+  // qu'à l'interaction. On s'arrête dès que le repos est écoulé depuis 10 s.
+  let restTick = null;
+  function scheduleRestTick() {
+    if (restTick) clearInterval(restTick);
+    restTick = setInterval(() => {
+      const timer = state.restTimer;
+      if (!timer?.endsAt) {
+        clearInterval(restTick);
+        restTick = null;
+        return;
+      }
+      if (Date.now() - timer.endsAt > 10000) {
+        state.restTimer = null;
+        clearInterval(restTick);
+        restTick = null;
+      }
+      render();
+    }, 1000);
   }
 
   // v5.8.0 : plus aucun formulaire de chat. Conservé pour ne pas casser app.onsubmit.
