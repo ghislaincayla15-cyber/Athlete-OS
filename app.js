@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "8.1.0";
+  const APP_VERSION = "8.1.1";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -2320,17 +2320,17 @@
         none: "Non",
         rest: "Repos prevu",
       },
-      plants: { aucun: "Aucun", un: "Une portion", deux: "Deux portions", trois: "Trois portions ou plus" },
+      plants: { aucun: "Aucune", un: "1 portion", deux: "2 portions", trois: "3 et plus" },
       diet: {
-        maitrisee: "Maitrisee",
-        correcte: "Globalement correcte",
-        irreguliere: "Irreguliere",
-        eloignee: "Tres eloignee de l'objectif",
+        maitrisee: "Maîtrisée",
+        correcte: "Correcte",
+        irreguliere: "Irrégulière",
+        eloignee: "Loin de l'objectif",
       },
-      hunger: { faible: "Faible", normal: "Normal", eleve: "Eleve", tres: "Tres eleve" },
-      dayEnergy: { faible: "Faible", moyen: "Moyen", bon: "Bon" },
+      hunger: { faible: "Faible", normal: "Normale", eleve: "Élevée", tres: "Très élevée" },
+      dayEnergy: { faible: "Faible", moyen: "Moyenne", bon: "Bonne" },
       digestion: { bonne: "Bonne", moyenne: "Moyenne", mauvaise: "Mauvaise" },
-      alcohol: { aucun: "Aucun", modere: "Consommation moderee", important: "Consommation importante" },
+      alcohol: { aucun: "Aucun", modere: "Modérée", important: "Importante" },
     };
     return maps[group]?.[value] || value;
   }
@@ -4401,15 +4401,15 @@
           </div>
           <div class="field full">
             <span class="label">Qualité d'ensemble</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "diet" }, n.diet, ["maitrisee", "correcte", "irreguliere", "eloignee"])}</div>
+            <div class="segmented">${selectOptions({ scope: "nutrition", key: "diet" }, n.touched ? n.diet : "", ["maitrisee", "correcte", "irreguliere", "eloignee"])}</div>
           </div>
           <div class="field full">
             <span class="label">Portions de végétaux</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "plants" }, n.plants, ["aucun", "un", "deux", "trois"])}</div>
+            <div class="segmented">${selectOptions({ scope: "nutrition", key: "plants" }, n.touched ? n.plants : "", ["aucun", "un", "deux", "trois"])}</div>
           </div>
           <div class="field full">
             <span class="label">Alcool</span>
-            <div class="segmented">${selectOptions({ scope: "nutrition", key: "alcohol" }, n.alcohol, ["aucun", "modere", "important"])}</div>
+            <div class="segmented">${selectOptions({ scope: "nutrition", key: "alcohol" }, n.touched ? n.alcohol : "", ["aucun", "modere", "important"])}</div>
           </div>
         </div>
         <p class="small-text">En déficit léger, ce sont les repas protéinés qui décident si tu perds du gras ou du muscle. Vise 3 repas apportant chacun une source protéinée franche — le reste suit. Ces lignes partent dans le briefing du coach.</p>
