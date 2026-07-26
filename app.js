@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.6.0";
+  const APP_VERSION = "7.7.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -6915,56 +6915,9 @@
   }
 
   // « Qu'est-ce que je dois faire ? » — la réponse d'abord, les statistiques ensuite (v4.9).
-  function NextUpBlock() {
-    const todayKey = dateKey();
-    const today = programActive() ? programSessionFor(todayKey) : null;
+  // v7.7.0 : NextUpBlock() retiré — le calendrier de la semaine (v7.5.0)
+  // dit « aujourd'hui » et « ensuite » mieux, et sans doublon.
 
-    let next = null;
-    for (let i = 1; i <= 7; i++) {
-      const key = keyOffset(-i);
-      const session = programActive(key) ? programSessionFor(key) : null;
-      if (session && session.kind !== "repos") {
-        next = { key, session };
-        break;
-      }
-    }
-
-    const logged = (day().workouts || []).length > 0 || daySessions().length > 0;
-    const todayLine = today
-      ? today.kind === "repos"
-        ? `<strong>Repos planifié</strong><span>${escapeHtml(today.focus)}</span>`
-        : `<strong>${escapeHtml(today.title)}</strong><span>${escapeHtml(today.focus)}${today.duration ? ` · ${today.duration} min` : ""}${
-            today.rpe ? ` · RPE ${escapeHtml(String(today.rpe))}` : ""
-          }</span>`
-      : `<strong>Le bloc démarre le ${escapeHtml(formatFrDate(programStartDate()))}</strong><span>D'ici là : check-ins quotidiens et mesure de référence.</span>`;
-
-    return `
-      <div class="nextup">
-        <div class="nextup-row">
-          <span class="nextup-tag">Aujourd'hui</span>
-          <div class="nextup-text">${todayLine}</div>
-          ${
-            today && today.kind !== "repos"
-              ? `<button type="button" class="${logged ? "secondary-button" : "primary-button"}" data-goto="today:workout">${
-                  logged ? "Séance enregistrée" : "Ouvrir la séance"
-                }</button>`
-              : ""
-          }
-        </div>
-        ${
-          next
-            ? `<div class="nextup-row secondary">
-                <span class="nextup-tag">Ensuite</span>
-                <div class="nextup-text">
-                  <strong>${escapeHtml(formatFrDate(next.key))} — ${escapeHtml(next.session.title)}</strong>
-                  <span>${escapeHtml(next.session.focus)}</span>
-                </div>
-              </div>`
-            : ""
-        }
-      </div>
-    `;
-  }
 
   // ---- v7.5.0 : la semaine en calendrier, jour par jour ----
   // Retour de Ghislain : « on voit qu'on parle de la semaine, ce serait bien
@@ -7105,56 +7058,161 @@
     `;
   }
 
+  // ---- v7.7.0 : ce que ce bloc va chercher, et où tu en es ----
+  // Retour de Ghislain : « je n'ai pas besoin de savoir qu'aujourd'hui c'est un
+  // jour de repos, je l'ai déjà dans le planning juste à droite. Soyons plus
+  // précis ici : qu'est-ce qu'on va chercher dans ce Bloc 1 concrètement, à
+  // quoi ça sert ? » Exact — depuis le calendrier v7.5.0, le bloc « Aujourd'hui
+  // / Ensuite » faisait doublon. La place se libère pour l'intention du bloc :
+  // quatre objectifs, chacun avec sa cible chiffrée et l'état réel.
+
+  const BLOC1_INTENT = {
+    why: "Dix semaines pour rendre le corps plus dense et plus solide : perdre du gras sans perdre de muscle, reconstruire une base aérobie que la blessure avait entamée, et redonner au mollet sa capacité à encaisser des impacts. À la sortie, tu dois être plus léger de tour de taille, aussi fort qu'aujourd'hui voire plus, capable de courir 45 minutes en conversation, et de sauter sans y penser.",
+    outcome: "Le Bloc 2 partira de ces chiffres : c'est la semaine 10 qui décide s'il ira vers la force, l'endurance, ou les deux.",
+  };
+
+  function blocTargets() {
+    const out = [];
+
+    // 1. Garder le muscle en déficit — la seule preuve est la charge.
+    const lifts = liftStatsList();
+    const rising = lifts.filter((l) => l.trendTone === "good").length;
+    // Le mouvement cité doit être le plus parlant, pas le premier de la liste.
+    const heaviest = lifts.length ? [...lifts].sort((a, b) => b.last.e1rm - a.last.e1rm)[0] : null;
+    out.push({
+      label: "Garder le muscle pendant que le gras descend",
+      target: "e1RM stable ou en hausse sur les 6 mouvements clés",
+      why: "En déficit calorique, la force est le seul témoin fiable que la masse maigre tient. Si les charges montent, le muscle reste.",
+      status: lifts.length
+        ? `${lifts.length} mouvement${lifts.length > 1 ? "s" : ""} suivi${lifts.length > 1 ? "s" : ""}${rising ? `, ${rising} en progression` : ""}. Le plus lourd : ${heaviest.name}, e1RM ${Math.round(heaviest.last.e1rm)} kg.`
+        : "Aucun top set enregistré : la référence se construit dès ta première séance.",
+      tone: lifts.length ? "good" : "watch",
+    });
+
+    // 2. Tour de taille — l'objectif chiffré le plus net du bloc.
+    const waist = lastWaist();
+    const goal = Math.round(ATHLETE.heightCm * 0.5 * 10) / 10;
+    out.push({
+      label: "Réduire le tour de taille",
+      target: `${String(goal).replace(".", ",")} cm (moitié de ta stature)`,
+      why: "Le tour de taille dit ce que la balance cache : c'est le gras viscéral qui bouge, pas l'eau ni le glycogène. C'est aussi le marqueur le mieux corrélé au risque cardiométabolique.",
+      status: waist
+        ? (() => {
+            const ratio = waistRatio(waist.value);
+            const left = Math.round((waist.value - goal) * 10) / 10;
+            return `${waist.value} cm mesurés le ${formatShortDate(waist.key)} · ratio ${String(ratio).replace(".", ",")} · ${String(left).replace(".", ",")} cm à perdre, soit ${Math.ceil(left / 1.5)} mois environ à 1-2 cm par mois.`;
+          })()
+        : "Aucune mesure : prends-la au réveil, à jeun, au nombril, sans rentrer le ventre.",
+      tone: waist ? (waistRatio(waist.value) >= 0.6 ? "bad" : waistRatio(waist.value) >= 0.5 ? "watch" : "good") : "watch",
+    });
+
+    // 3. Base aérobie.
+    const running = runningSummary();
+    out.push({
+      label: "Consolider la base aérobie",
+      target: "2 courses par semaine, zone 2 stricte, jusqu'à 45-55 min",
+      why: "La zone 2 construit le moteur sans coûter de récupération à la musculation. C'est ce qui rendra les séances de force moins éprouvantes et la perte de gras plus facile à tenir.",
+      status: running.total
+        ? `${running.total} course${running.total > 1 ? "s" : ""} sur 8 semaines · ${String(running.kmWeek).replace(".", ",")} km et ${running.minutesWeek} min cette semaine.`
+        : "Aucune course enregistrée sur 8 semaines.",
+      tone: running.total >= 2 ? "good" : "watch",
+    });
+
+    // 4. Pliométrie — la seule cible conditionnelle du bloc.
+    const decision = plyoDecision();
+    out.push({
+      label: "Reconstruire la qualité de rebond",
+      target: "Palier P0 → P1 (S3-5) → P2 (S7-9), sous conditions",
+      why: "Le mollet sort de kiné : la capacité à encaisser des impacts se reconstruit par paliers, jamais par le calendrier. Chaque montée se mérite sur des séances propres et des tests validés.",
+      status: `Palier ${PLYO_TIER_LABEL[decision.tier]} en cours. ${decision.reason}`,
+      tone: decision.held ? "watch" : "good",
+    });
+
+    return out;
+  }
+
+  function BlocIntentCard() {
+    const week = programWeek();
+    const phase = programPhase(week);
+    const targets = blocTargets();
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">${escapeHtml(BLOC1.name)}</p>
+            <h2>Ce que ce bloc va chercher</h2>
+          </div>
+          ${StatusBadge(week ? `Semaine ${week} sur ${BLOC1.totalWeeks}` : "Amorce", "info")}
+        </div>
+        <p class="small-text">${escapeHtml(BLOC1_INTENT.why)}</p>
+        <div class="target-list">
+          ${targets
+            .map(
+              (t, i) => `
+              <div class="target">
+                <div class="target-head">
+                  <span class="target-num">${i + 1}</span>
+                  <strong>${escapeHtml(t.label)}</strong>
+                  ${StatusBadge(t.target, t.tone)}
+                </div>
+                <p class="target-why">${escapeHtml(t.why)}</p>
+                <p class="target-status">${escapeHtml(t.status)}</p>
+              </div>
+            `
+            )
+            .join("")}
+        </div>
+        <div class="phase-strip">
+          ${BLOC1.phases
+            .map((p) => {
+              const active = week !== null && week >= p.from && week <= p.to;
+              const past = week !== null && week > p.to;
+              return `
+                <div class="phase-step ${active ? "active" : ""} ${past ? "past" : ""}">
+                  <span class="phase-range">S${p.from}${p.to !== p.from ? `-${p.to}` : ""}</span>
+                  <span class="phase-label">${escapeHtml(p.label)}</span>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+        ${
+          phase
+            ? `<div class="notice"><strong>Cette phase : ${escapeHtml(phase.label)}</strong><p>${escapeHtml(phase.weeklyGoal)}</p></div>`
+            : `<div class="notice"><strong>Avant le départ</strong><p>Check-ins quotidiens pour construire la base de readiness, tour de taille de référence, et les premiers top sets pour calibrer le moteur de charges.</p></div>`
+        }
+        <p class="small-text">${escapeHtml(BLOC1_INTENT.outcome)}</p>
+        <p class="small-text"><a href="${BLOC1.guideUrl}" target="_blank" rel="noopener">Guide complet du bloc → chaque exercice expliqué, avec sa vidéo de démonstration</a></p>
+      </section>
+    `;
+  }
+
   function renderRealProgram() {
     const week = programWeek();
     const phase = programPhase(week);
     const stats = programStats();
     const upcoming = programUpcoming();
 
+    // v7.7.0 : l'en-tête ne répète plus « aujourd'hui / ensuite » — le
+    // calendrier v7.5.0 le dit mieux, juste en dessous. Elle porte désormais
+    // l'intention du bloc et l'état réel de chaque objectif.
     const overview = `
       <div class="section-grid">
-        <section class="card">
-          <div class="card-head card-head--save">
-            <div>
-              <p class="eyebrow">${escapeHtml(BLOC1.name)}</p>
-              <h2>${
-                upcoming
-                  ? `Départ ${escapeHtml(formatFrDate(programStartDate()))}`
-                  : week === 0
-                    ? `Semaine d'amorce · ${escapeHtml(formatFrDate(BLOC1.amorceStart))} → ${escapeHtml(formatFrDate(addDaysKey(programStartDate(), -1)))}`
-                    : `Semaine ${week} sur ${BLOC1.totalWeeks}`
-              }</h2>
-              ${
-                week === 0 && !upcoming
-                  ? `<p class="small-text">Phase de calibration. La semaine 1 du bloc démarre le ${escapeHtml(formatFrDate(programStartDate()))}.</p>`
-                  : ""
-              }
-            </div>
-            ${
-              upcoming
-                ? StatusBadge(`J-${daysUntilBlockStart()}`, "info")
-                : stats.planned
-                  ? StatusBadge(`${stats.completion} % du bloc`, "info")
-                  : StatusBadge(escapeHtml(phase?.label || "Amorce"), "info")
-            }
-          </div>
-          <p class="small-text">${escapeHtml(BLOC1.goal)}</p>
-          ${NextUpBlock()}
-          ${
-            phase
-              ? `<div class="notice"><strong>Objectif de la semaine</strong><p>${escapeHtml(phase.weeklyGoal)}</p></div>`
-              : `<div class="notice"><strong>D'ici le départ</strong><p>Check-ins quotidiens pour construire ta base de readiness, export CSV Hevy au coach pour calibrer les charges, tour de taille de référence à mesurer.</p></div>`
-          }
-          <p class="small-text">Bloc de ${BLOC1.totalWeeks} semaines · ${stats.totalPlanned} séances prévues · deload en semaine ${BLOC1.deloadWeek}${
-            stats.planned ? ` · ${stats.done} séance${stats.done > 1 ? "s" : ""} conforme${stats.done > 1 ? "s" : ""} sur ${stats.planned} à ce stade` : ""
-          }.</p>
-          <p class="small-text"><a href="${BLOC1.guideUrl}" target="_blank" rel="noopener">Guide complet du bloc → chaque exercice expliqué, avec sa vidéo de démonstration</a></p>
-          ${
-            upcoming
-              ? `<div class="button-row" style="margin-top:14px"><button type="button" class="secondary-button" data-action="start-block-now">${icon("play")}Commencer dès cette semaine</button></div>`
-              : ""
-          }
-        </section>
+        ${BlocIntentCard()}
+        ${
+          upcoming
+            ? `<section class="card">
+                <div class="card-head">
+                  <div>
+                    <p class="eyebrow">Départ</p>
+                    <h2>${escapeHtml(formatFrDate(programStartDate()))}</h2>
+                  </div>
+                  ${StatusBadge(`J-${daysUntilBlockStart()}`, "info")}
+                </div>
+                <div class="button-row" style="margin-top:14px"><button type="button" class="secondary-button" data-action="start-block-now">${icon("play")}Commencer dès cette semaine</button></div>
+              </section>`
+            : ""
+        }
         ${WeekCalendarCard()}
         ${
           stats.planned

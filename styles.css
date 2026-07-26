@@ -3485,3 +3485,101 @@ body.light .ring {
   line-height: 1.4;
   color: var(--muted);
 }
+
+/* v7.7.0 — l'intention du bloc : objectifs et arc des phases */
+.target-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.target {
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.target-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.target-num {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--volt, #c0f04a);
+  color: #10130f;
+  font-size: 0.7rem;
+  font-weight: 800;
+  flex: none;
+}
+
+.target-head strong {
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+}
+
+.target-head .badge {
+  flex: none;
+}
+
+.target-why,
+.target-status {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.target-status {
+  padding-left: 9px;
+  border-left: 2px solid var(--line);
+  color: var(--text);
+  opacity: 0.9;
+}
+
+.phase-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.phase-step {
+  display: grid;
+  gap: 3px;
+  padding: 8px 5px;
+  border-top: 3px solid var(--line);
+  opacity: 0.5;
+}
+
+.phase-step.past {
+  border-top-color: var(--muted);
+  opacity: 0.72;
+}
+
+.phase-step.active {
+  border-top-color: var(--volt, #c0f04a);
+  opacity: 1;
+}
+
+.phase-range {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.phase-step.active .phase-range { color: var(--volt, #c0f04a); }
+
+.phase-label {
+  font-size: 0.66rem;
+  line-height: 1.25;
+  color: var(--muted);
+}
