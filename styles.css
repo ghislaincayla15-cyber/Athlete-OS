@@ -3336,3 +3336,8 @@ body.light .ring {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* v7.4.0 — saisie libre repliée quand une séance est prescrite */
+.manual-collapsed {
+  opacity: 0.82;
+}

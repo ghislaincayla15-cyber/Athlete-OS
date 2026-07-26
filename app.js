@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.3.0";
+  const APP_VERSION = "7.4.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -189,6 +189,7 @@
     restTimer: null, // v7.0.0 : minuteur de repos { name, endsAt }
     notFullOpen: "", // v7.1.0 : jour dont la version allégée est dépliée
     openMicro: "", // v7.3.0 : micro-session dont le détail est déplié
+    manualLogOpen: false, // v7.4.0 : formulaire libre déplié malgré une prescription
     expandedProgramDay: null,
     journal: {},
     program: {
@@ -5971,19 +5972,59 @@
       </div>
     `;
 
+    // v7.4.0 : quand une séance est prescrite, ce formulaire libre faisait
+    // doublon — deux endroits pour saisir la même séance, dont un vide à
+    // remplir entièrement à la main alors que l'autre est pré-rempli. Il se
+    // replie derrière un bouton et ne sert plus qu'aux séances hors programme.
+    const prescribed = hasPrescription();
+    if (prescribed && !state.manualLogOpen) {
+      return `
+        <section class="form-panel manual-collapsed">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Journal des séances</p>
+              <h2>Séance hors programme</h2>
+            </div>
+            ${StatusBadge("Repliée", "info")}
+          </div>
+          <p class="small-text">Ta séance du jour se saisit plus haut, dans « ${escapeHtml(prescribed)} » : les charges y sont déjà calculées et tu n'as qu'à corriger ce qui a différé. Ce formulaire ne sert que si tu as fait autre chose que ce qui était prévu.</p>
+          <div class="button-row" style="margin-top:12px">
+            <button type="button" class="secondary-button" data-action="toggle-manual-log">Enregistrer une séance hors programme</button>
+          </div>
+        </section>
+      `;
+    }
+
     return `
       <section class="form-panel">
         <div class="card-head card-head--save">
           <div>
             <p class="eyebrow">Journal des séances</p>
-            <h2>Enregistrer ce que tu as fait</h2>
+            <h2>${prescribed ? "Séance hors programme" : "Enregistrer ce que tu as fait"}</h2>
           </div>
           <div class="head-badges">${StatusBadge("Saisie manuelle", "info")}${SaveBadge()}</div>
         </div>
+        ${
+          prescribed
+            ? `<p class="small-text">Rappel : ce que le programme prévoyait se saisit dans « ${escapeHtml(prescribed)} », plus haut. Ici, seulement ce que tu as fait en plus ou à la place.</p>`
+            : ""
+        }
         <div class="field" style="margin-top:14px">${modeButtons}</div>
         <div style="margin-top:14px">${isMuscu ? muscuForm : courseForm}</div>
+        ${
+          prescribed
+            ? `<div class="button-row" style="margin-top:12px"><button type="button" class="ghost-button" data-action="toggle-manual-log">Replier la saisie libre</button></div>`
+            : ""
+        }
       </section>
     `;
+  }
+
+  // Titre de la carte qui porte déjà la prescription du jour, ou "" s'il n'y en a pas.
+  function hasPrescription(key = dateKey()) {
+    if (prescriptionFor(key).length) return "Séance prescrite";
+    if (runPrescription(key)) return "Course prescrite";
+    return "";
   }
 
   function TodayWorkoutsList() {
@@ -7902,6 +7943,9 @@
     if (action === "calf-hops") {
       day().calfTest.hopsOk = actionButton.dataset.value === "ok";
       day().calfTest.done = true;
+    }
+    if (action === "toggle-manual-log") {
+      state.manualLogOpen = !state.manualLogOpen;
     }
     if (action === "toggle-micro-detail") {
       state.openMicro = state.openMicro === actionButton.dataset.micro ? "" : actionButton.dataset.micro;
