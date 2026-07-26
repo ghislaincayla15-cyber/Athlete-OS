@@ -3057,3 +3057,25 @@ body.light .ring {
   font-size: 0.79rem;
   line-height: 1.4;
 }
+
+/* v6.1.0 — tests mollet + curseur douleur */
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.check-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--volt, #C0F04A);
+  cursor: pointer;
+}
+
+.range-value.alert {
+  color: var(--bad, #F0684A);
+  font-weight: 700;
+}

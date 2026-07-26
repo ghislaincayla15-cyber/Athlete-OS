@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "6.0.0";
+  const APP_VERSION = "6.1.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -145,9 +145,18 @@
       duration: "",
       rpe: 5,
       pain: "aucune",
+      calfPain: 0, // v6.1.0 : douleur mollet 0-10 — la règle d'arrêt du bloc est > 3/10
       satisfaction: 3,
       reason: "",
       comment: "",
+    },
+    calfTest: {
+      // v6.1.0 : résultats des tests mollet du lundi (pilotent les paliers pliométrie)
+      done: false,
+      raisesReps: "", // élévations unijambe, amplitude complète (objectif 25-30 sans douleur)
+      raisesPain: false,
+      hopsOk: null, // 15 sautillements unipodaux sans douleur : true/false
+      note: "",
     },
     nutrition: {
       touched: false,
@@ -249,6 +258,7 @@
       microDone: Array.isArray(entry.microDone) ? entry.microDone : [],
       morning: { ...base.morning, ...(entry.morning || {}) },
       evening: { ...base.evening, ...(entry.evening || {}) },
+      calfTest: { ...base.calfTest, ...(entry.calfTest || {}) },
       nutrition: { ...base.nutrition, ...(entry.nutrition || {}) },
     };
   }
@@ -278,6 +288,7 @@
     if (scope === "morning") return morning();
     if (scope === "evening") return evening();
     if (scope === "nutrition") return nutrition();
+    if (scope === "calfTest") return day().calfTest;
     if (scope === "day") return day();
     return state[scope];
   }
@@ -623,7 +634,11 @@
       const target = scopeTarget(scope);
       if (!target) return;
       let value = input.value;
-      if (input.type === "range" || input.type === "number") {
+      if (input.type === "checkbox") {
+        // v6.1.0 : input.value d'une case vaut toujours "on" — comparer l'état coché,
+        // sinon le flush croit à un changement et marque le scope comme touché.
+        value = input.checked;
+      } else if (input.type === "range" || input.type === "number") {
         value = input.value === "" ? "" : Number(input.value);
         if (value !== "" && !Number.isFinite(value)) value = "";
       }
@@ -2510,6 +2525,76 @@
     return clamp(((value - min) / (max - min)) * 100, 0, 100);
   }
 
+  // ---- v6.1.0 : saisie des tests mollet du lundi ----
+  // Les tests conditionnent les paliers pliométrie (P0→P1→P2). Sans champ de
+  // saisie, ils restaient déclaratifs — désormais les résultats sont persistés
+  // dans journal[key].calfTest et remontent dans le briefing.
+  function calfTestDay(key = dateKey()) {
+    return actualWeekday(key) === 1 && programActive(key);
+  }
+
+  function CalfTestCard(key = dateKey()) {
+    if (!calfTestDay(key)) return "";
+    const test = day(key).calfTest;
+    const reps = Number(test.raisesReps);
+    const repsOk = Number.isFinite(reps) && reps >= 25 && !test.raisesPain;
+    const bothOk = repsOk && test.hopsOk === true;
+    const anyFail = (test.done && !repsOk) || test.hopsOk === false;
+    return `
+      <section class="card">
+        <div class="card-head card-head--save">
+          <div>
+            <p class="eyebrow">Tests mollet du lundi</p>
+            <h2>Avant la séance, à froid</h2>
+          </div>
+          <div class="head-badges">${
+            !test.done
+              ? StatusBadge("À faire", "watch")
+              : bothOk
+                ? StatusBadge("Validés", "good")
+                : StatusBadge("Alerte", "bad")
+          }${SaveBadge()}</div>
+        </div>
+        <div class="form-grid">
+          <div class="field full">
+            <label class="check-row">
+              <input type="checkbox" ${test.done ? "checked" : ""} data-scope="calfTest" data-key="done" data-type="checkbox" />
+              <span>J'ai fait les deux tests ce matin</span>
+            </label>
+          </div>
+          <div class="field">
+            <label for="calf-reps">Élévations unijambe (amplitude complète)</label>
+            <input id="calf-reps" type="number" min="0" max="60" inputmode="numeric" value="${escapeHtml(String(test.raisesReps ?? ""))}" data-scope="calfTest" data-key="raisesReps" placeholder="objectif 25-30 / jambe" />
+          </div>
+          <div class="field">
+            <label class="check-row">
+              <input type="checkbox" ${test.raisesPain ? "checked" : ""} data-scope="calfTest" data-key="raisesPain" data-type="checkbox" />
+              <span>Douleur pendant les élévations</span>
+            </label>
+          </div>
+          <div class="field full">
+            <span class="label">15 sautillements unipodaux, faible amplitude</span>
+            <div class="segmented">
+              <button type="button" class="segmented-button ${test.hopsOk === true ? "active" : ""}" data-action="calf-hops" data-value="ok">Sans douleur</button>
+              <button type="button" class="segmented-button ${test.hopsOk === false ? "active" : ""}" data-action="calf-hops" data-value="pain">Douleur</button>
+            </div>
+          </div>
+          <div class="field full">
+            <label for="calf-note">Remarque (facultatif)</label>
+            <input id="calf-note" type="text" value="${escapeHtml(test.note || "")}" data-scope="calfTest" data-key="note" placeholder="Côté concerné, sensation..." />
+          </div>
+        </div>
+        <p class="small-text">${
+          bothOk
+            ? "Les deux tests sont validés : la progression pliométrique standard continue (palier suivant accessible selon la semaine)."
+            : anyFail
+              ? "Un test en échec → on reste au palier P0 cette semaine, re-test lundi prochain. Signale-le aussi au bilan du soir."
+              : "Objectifs : 25-30 élévations par jambe sans douleur, et 15 sautillements sans douleur ni le lendemain matin. Ces tests pilotent les paliers pliométrie de tout le bloc."
+        }</p>
+      </section>
+    `;
+  }
+
   // ---- v6.0.0 : micro-sessions cochables avec créneaux ----
   // Retour de Ghislain (26/07) : « j'ai l'impression que je n'ai jamais d'étirement ».
   // Constat exact — elles n'étaient qu'une ligne de texte gris, sans horaire et
@@ -3414,6 +3499,15 @@
           <div class="field full">
             <span class="label">Douleur apparue pendant la séance</span>
             <div class="segmented">${selectOptions({ scope: "evening", key: "pain" }, evening().pain, ["aucune", "legere", "moderee", "forte"])}</div>
+          </div>
+          <div class="field full">
+            <div class="range-head"><label for="calfPain">Douleur mollet aujourd'hui</label><span class="range-value ${Number(evening().calfPain) > 3 ? "alert" : ""}">${evening().calfPain}/10</span></div>
+            <input id="calfPain" type="range" min="0" max="10" value="${evening().calfPain}" data-scope="evening" data-key="calfPain" />
+            <p class="small-text">${
+              Number(evening().calfPain) > 3
+                ? "⚠️ Au-dessus de 3/10 : la règle d'arrêt s'applique — la prochaine séance à impact (course, pliométrie) est remplacée par vélo ou marche, et on en parle au bilan."
+                : "Règle du bloc : > 3/10 pendant une course ou la pliométrie → stop. Douleur au réveil le lendemain → séance à impact remplacée."
+            }</p>
           </div>
           <div class="field">
             <div class="range-head"><label for="satisfaction">Satisfaction</label><span class="range-value">${evening().satisfaction}/5</span></div>
@@ -5459,6 +5553,7 @@
           <div class="page-grid">
             ${RingsRow(readiness)}
             ${QuickSessionCard()}
+            ${CalfTestCard()}
             ${MicroCard()}
             ${WeatherCard()}
             ${MissingCard()}
@@ -5482,6 +5577,7 @@
       workout: `
         <div class="page-grid">
           ${QuickSessionCard()}
+          ${CalfTestCard()}
           ${MicroCard()}
           ${WeatherCard()}
           <div class="section-grid">
@@ -6478,10 +6574,17 @@
         if (entry.evening.duration) bits.push(`${entry.evening.duration} min`);
         if (entry.evening.rpe) bits.push(`RPE ${entry.evening.rpe}`);
         bits.push(`douleur ${entry.evening.pain}`);
+        bits.push(`mollet ${entry.evening.calfPain ?? 0}/10${Number(entry.evening.calfPain) > 3 ? " ⚠️ règle d'arrêt" : ""}`);
         if (entry.evening.satisfaction) bits.push(`satisfaction ${entry.evening.satisfaction}/5`);
         lines.push(`Bilan du soir : ${bits.join(" · ")}`);
         if (entry.evening.reason) lines.push(`  Raison notée : ${entry.evening.reason}`);
         if (entry.evening.comment) lines.push(`  Commentaire : ${entry.evening.comment}`);
+      }
+      if (entry.calfTest?.done) {
+        const t = entry.calfTest;
+        const repsTxt = t.raisesReps !== "" && t.raisesReps !== null ? `${t.raisesReps} élévations${t.raisesPain ? " AVEC douleur" : " sans douleur"}` : "élévations non comptées";
+        const hopsTxt = t.hopsOk === true ? "sautillements sans douleur" : t.hopsOk === false ? "sautillements DOULOUREUX" : "sautillements non renseignés";
+        lines.push(`Tests mollet : ${repsTxt} · ${hopsTxt}${t.note ? ` · ${t.note}` : ""}`);
       }
       const micro = microStats(key);
       if (micro.total) {
@@ -6513,6 +6616,8 @@
     if (withoutEvening.length) missing.push(`bilan du soir absent sur ${withoutEvening.length} jour(s)`);
     const microSkipped = keys.filter((key) => microStats(key).total && !microStats(key).done);
     if (microSkipped.length) missing.push(`aucune micro-session cochée sur ${microSkipped.length} jour(s)`);
+    const mondaysNoTest = keys.filter((key) => calfTestDay(key) && !state.journal[key]?.calfTest?.done);
+    if (mondaysNoTest.length) missing.push(`tests mollet du lundi non renseignés (${mondaysNoTest.length} lundi(s))`);
     if (missing.length) {
       lines.push("");
       lines.push("## Données manquantes à signaler au coach");
@@ -6848,6 +6953,10 @@
     if (action === "close-exercise") {
       state.openExercise = null;
       state.openExerciseDetail = "";
+    }
+    if (action === "calf-hops") {
+      day().calfTest.hopsOk = actionButton.dataset.value === "ok";
+      day().calfTest.done = true;
     }
     if (action === "toggle-micro") {
       toggleMicro(actionButton.dataset.day || dateKey(), actionButton.dataset.micro);
@@ -7234,20 +7343,23 @@
     // Un champ texte perd le focus quand on touche un autre bouton : re-rendre ici
     // détacherait ce bouton du DOM avant que son clic ne soit traité (premier appui ignoré).
     // La valeur est déjà enregistrée ; le rendu suivra au prochain clic.
-    if (target.type === "range" || target.tagName === "SELECT") render();
+    if (target.type === "range" || target.type === "checkbox" || target.tagName === "SELECT") render();
   }
 
   function markScopeTouched(scope) {
     if (scope === "morning") morning().completed = true;
     if (scope === "evening") evening().touched = true;
     if (scope === "nutrition") nutrition().touched = true;
+    if (scope === "calfTest") day().calfTest.done = true; // saisir un résultat vaut « tests faits »
   }
 
   function updateStateFromField(target) {
     const scope = target.dataset.scope;
     const key = target.dataset.key;
     let value = target.value;
-    if (target.type === "range" || target.type === "number") {
+    if (target.type === "checkbox") {
+      value = target.checked; // v6.1.0 : cases à cocher des tests mollet
+    } else if (target.type === "range" || target.type === "number") {
       value = target.value === "" ? "" : Number(target.value);
       if (value !== "" && !Number.isFinite(value)) value = "";
     }
