@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.1.0";
+  const APP_VERSION = "7.2.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -227,6 +227,7 @@
     imports: {
       health: null,
       garmin: null,
+      summary: null, // v7.2.0 : bilan du dernier import (trouvé / manquant)
       error: "",
       progress: 0,
     },
@@ -3374,7 +3375,17 @@
         title: "Fréquence cardiaque de repos",
         current: value ? `${value} bpm` : "—",
         currentNote: value ? "Dernière valeur importée depuis Apple Santé." : "Aucune valeur importée.",
-        history: "L'import ne conserve que la dernière valeur : l'app ne peut pas encore afficher ta moyenne personnelle. C'est une limite connue, pas une absence de donnée.",
+        history: (() => {
+          if (!health.rhrAvg7 && !health.rhrAvg30) return "Aucun historique de FC de repos dans l'import.";
+          const parts = [];
+          if (health.rhrAvg7) parts.push(`moyenne 7 j : ${String(health.rhrAvg7).replace(".", ",")} bpm`);
+          if (health.rhrAvg30) parts.push(`moyenne 30 j : ${String(health.rhrAvg30).replace(".", ",")} bpm`);
+          if (value && health.rhrAvg30) {
+            const delta = Math.round((value - health.rhrAvg30) * 10) / 10;
+            parts.push(delta === 0 ? "tu es exactement sur ta moyenne" : `${delta > 0 ? "+" : ""}${String(delta).replace(".", ",")} bpm par rapport à ta moyenne 30 j${delta >= 5 ? " — au-delà de +5 bpm plusieurs jours d'affilée, c'est un signal de fatigue" : ""}`);
+          }
+          return `${parts.join(" · ")} (${health.rhrDays || 0} jours mesurés).`;
+        })(),
         scaleTitle: "Repères généraux",
         zones,
         activeIndex,
@@ -3397,7 +3408,17 @@
         title: "Sommeil",
         current: minutes ? formatMinutes(minutes) : "—",
         currentNote: minutes ? "Dernière nuit importée." : "Aucune nuit importée.",
-        history: "Comme la FC de repos, seule la dernière nuit est conservée à l'import — la moyenne personnelle n'est pas encore calculable.",
+        history: (() => {
+          if (!health.sleepAvg7 && !health.sleepAvg30) return "Aucun historique de sommeil dans l'import.";
+          const parts = [];
+          if (health.sleepAvg7) parts.push(`moyenne 7 j : ${formatMinutes(Math.round(health.sleepAvg7))}`);
+          if (health.sleepAvg30) parts.push(`moyenne 30 j : ${formatMinutes(Math.round(health.sleepAvg30))}`);
+          if (minutes && health.sleepAvg30) {
+            const delta = Math.round(minutes - health.sleepAvg30);
+            parts.push(`${delta > 0 ? "+" : ""}${delta} min par rapport à ta moyenne 30 j`);
+          }
+          return `${parts.join(" · ")} (${health.sleepDays || 0} nuits mesurées).`;
+        })(),
         scaleTitle: "Repères de durée",
         zones,
         activeIndex,
@@ -4570,6 +4591,15 @@
             : ""
         }
         ${
+          state.imports.summary && !state.imports.progress
+            ? `<div class="notice">
+                <strong>Dernier import : ${state.imports.summary.records.toLocaleString("fr-FR")} enregistrements lus</strong>
+                <p><strong>Trouvé</strong> — ${escapeHtml(state.imports.summary.found.join(", ") || "rien d'exploitable")}.</p>
+                ${state.imports.summary.missing.length ? `<p><strong>Absent</strong> — ${escapeHtml(state.imports.summary.missing.join(", "))}.</p>` : ""}
+              </div>`
+            : ""
+        }
+        ${
           state.imports.error
             ? `<div class="notice"><strong>Import impossible</strong><p>${escapeHtml(state.imports.error)}</p></div>`
             : ""
@@ -4640,11 +4670,31 @@
         }
       });
 
+      // v7.2.0 : bilan honnête. L'ancien message annonçait que le HRV alimentait
+      // le readiness même quand il était absent — d'où le « rien ne se passe
+      // quand j'importe » : l'app disait que ça marchait là où ça ne marchait pas.
+      const found = [];
+      const missing = [];
+      if (parsed.rhr) found.push(`FC repos ${rounded(parsed.rhr)} bpm${parsed.rhrDays > 1 ? ` (${parsed.rhrDays} jours d'historique)` : ""}`);
+      else missing.push("FC de repos");
+      if (parsed.sleepMinutes) found.push(`sommeil ${formatMinutes(Math.round(parsed.sleepMinutes))}${parsed.sleepDays > 1 ? ` (${parsed.sleepDays} nuits)` : ""}`);
+      else missing.push("sommeil");
+      if (parsed.stepsAvg || parsed.steps) found.push(`pas ${(parsed.stepsAvg || parsed.steps).toLocaleString("fr-FR")}/jour`);
+      if (mergedWeights) found.push(`${mergedWeights} pesée(s) ajoutée(s) au journal`);
+      else if (!parsed.weightKg) missing.push("poids");
+      if (!parsed.hrvMs) missing.push("HRV (Garmin ne l'écrit pas dans Apple Santé — aucun réglage ne corrige ça)");
+      if (!parsed.vo2) missing.push("VO2max");
+      state.imports.summary = {
+        at: new Date().toISOString(),
+        records: parsed.records,
+        found,
+        missing,
+      };
       addCoachMessage(
         "coach",
-        `Import Apple Santé terminé : ${parsed.records} enregistrements utiles lus${
-          mergedWeights ? `, ${mergedWeights} pesée(s) ajoutée(s) au journal (moyenne 7 j et tendances mises à jour)` : ""
-        }. Sommeil, FC repos et HRV alimentent maintenant le readiness.`
+        `Import terminé : ${parsed.records} enregistrements lus. Trouvé : ${found.join(", ") || "rien d'exploitable"}.${
+          missing.length ? ` Absent : ${missing.join(", ")}.` : ""
+        }`
       );
       persist();
       render();
@@ -4675,6 +4725,7 @@
     const dailySteps = new Map();
     const dailyDistance = new Map();
     const dailySleep = new Map();
+    const dailyRhr = new Map(); // v7.2.0 : historique FC repos, pas seulement la dernière valeur
     const dailyWeights = {};
     const recordRe = /<Record\s[^>]*?\/>/g;
 
@@ -4741,6 +4792,7 @@
             if (dayKey) dailyWeights[dayKey] = kg;
           } else if (type.includes("RestingHeartRate") && Number.isFinite(value)) {
             setLatest("rhr", stamp, value);
+            if (dayKey) dailyRhr.set(dayKey, value);
           } else if (type.includes("HeartRateVariabilitySDNN") && Number.isFinite(value)) {
             setLatest("hrv", stamp, value);
           } else if (type.includes("VO2Max") && Number.isFinite(value)) {
@@ -4781,6 +4833,20 @@
     const steps = latestFromMap(dailySteps);
     const distance = latestFromMap(dailyDistance);
     const sleep = latestFromMap(dailySleep);
+    // v7.2.0 : moyennes personnelles sur les N derniers jours disponibles.
+    // C'est la référence qui compte pour la FC de repos et le sommeil — pas la
+    // plage de population affichée jusqu'ici dans les fiches.
+    const averageOfLast = (map, n) => {
+      const days = [...map.keys()].sort().slice(-n);
+      const values = days.map((d) => map.get(d)).filter((v) => Number.isFinite(v) && v > 0);
+      if (!values.length) return null;
+      return Math.round((values.reduce((sum, v) => sum + v, 0) / values.length) * 10) / 10;
+    };
+    const history = (map, n) => {
+      const days = [...map.keys()].sort().slice(-n);
+      return days.map((d) => ({ day: d, value: Math.round(map.get(d) * 10) / 10 }));
+    };
+
     // Moyenne des pas sur les 7 derniers jours disponibles (dépense de fond réelle).
     const stepsAvg = (() => {
       const days = [...dailySteps.keys()].sort().slice(-7);
@@ -4800,6 +4866,14 @@
       vo2: latest.vo2?.value || null,
       steps: steps?.value || null,
       stepsAvg: stepsAvg,
+      rhrAvg7: averageOfLast(dailyRhr, 7),
+      rhrAvg30: averageOfLast(dailyRhr, 30),
+      rhrHistory: history(dailyRhr, 30),
+      sleepAvg7: averageOfLast(dailySleep, 7),
+      sleepAvg30: averageOfLast(dailySleep, 30),
+      sleepHistory: history(dailySleep, 14),
+      rhrDays: dailyRhr.size,
+      sleepDays: dailySleep.size,
       distanceKm: distance?.value || null,
       sleepMinutes: sleep?.value || null,
       dailyWeights,
