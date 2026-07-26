@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.8.0";
+  const APP_VERSION = "8.0.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -973,6 +973,14 @@
 
   function formatKg(value) {
     return `${String(value).replace(".", ",")} kg`;
+  }
+
+  // v8.0.0 : un nombre affiché à l'utilisateur passe par ici. Le point décimal
+  // anglais traînait encore dans les tuiles Santé ; le poids y était arrondi à
+  // l'entier alors que la recomposition se lit au dixième.
+  function frNumber(value, decimals = 1) {
+    if (!Number.isFinite(Number(value))) return "—";
+    return Number(value).toFixed(decimals).replace(".", ",");
   }
 
   function adherenceStats(daysBack = 7) {
@@ -4237,8 +4245,17 @@
         })()}
         <div class="decision-meta">
           <div class="meta-tile"><span>Séance prévue</span><strong>${escapeHtml(decision.planned)}</strong></div>
-          <div class="meta-tile"><span>Intensite</span><strong>${escapeHtml(decision.intensity)}</strong></div>
+          <div class="meta-tile"><span>Intensité</span><strong>${escapeHtml(decision.intensity)}</strong></div>
           <div class="meta-tile"><span>Ajustement</span><strong>${escapeHtml(decision.adjustment)}</strong></div>
+        </div>
+        <div class="decision-detail">
+          <div><span>Point de vigilance</span><p>${escapeHtml(
+            morning().pain !== "aucune"
+              ? `Douleur ${labelFor("pain", morning().pain).toLowerCase()} à surveiller.`
+              : decision.vigilance || "Éviter l'échec musculaire inutile sur les séries lourdes."
+          )}</p></div>
+          <div><span>24 prochaines heures</span><p>${escapeHtml(decision.next24)}</p></div>
+          <div><span>Priorité récupération</span><p>${escapeHtml(decision.recovery)}</p></div>
         </div>
         <p class="fineprint">Basé sur tes données personnelles · Ceci n'est pas un diagnostic médical</p>
       </section>
@@ -4494,6 +4511,51 @@
     `;
   }
 
+  // v8.0.0 : la nutrition cessait d'être un fantôme. Quatre champs, choisis
+  // pour ce qui pilote réellement une recomposition : le nombre de repas
+  // protéinés (le levier n°1 pour garder le muscle en déficit), la qualité
+  // d'ensemble, les végétaux et l'alcool. Pas de comptage calorique : il n'est
+  // pas tenable sur dix semaines et Ghislain n'en a jamais demandé.
+  function NutritionCard() {
+    const n = nutrition();
+    return `
+      <section class="form-panel">
+        <div class="card-head card-head--save">
+          <div>
+            <p class="eyebrow">Nutrition du jour</p>
+            <h2>Quatre repères, pas de comptage</h2>
+          </div>
+          <div class="head-badges">${
+            n.touched ? StatusBadge("Renseignée", "good") : StatusBadge("À remplir", "watch")
+          }${SaveBadge()}</div>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="nut-protein">Repas protéinés</label>
+            <input id="nut-protein" type="number" inputmode="numeric" min="0" max="8" value="${escapeHtml(String(n.proteinMeals ?? ""))}" data-scope="nutrition" data-key="proteinMeals" placeholder="cible 3" />
+          </div>
+          <div class="field">
+            <label for="nut-meals">Repas au total</label>
+            <input id="nut-meals" type="number" inputmode="numeric" min="0" max="8" value="${escapeHtml(String(n.meals ?? ""))}" data-scope="nutrition" data-key="meals" placeholder="ex. 3" />
+          </div>
+          <div class="field full">
+            <span class="label">Qualité d'ensemble</span>
+            <div class="segmented">${selectOptions({ scope: "nutrition", key: "diet" }, n.diet, ["maitrisee", "correcte", "irreguliere", "eloignee"])}</div>
+          </div>
+          <div class="field full">
+            <span class="label">Portions de végétaux</span>
+            <div class="segmented">${selectOptions({ scope: "nutrition", key: "plants" }, n.plants, ["aucun", "un", "deux", "trois"])}</div>
+          </div>
+          <div class="field full">
+            <span class="label">Alcool</span>
+            <div class="segmented">${selectOptions({ scope: "nutrition", key: "alcohol" }, n.alcohol, ["aucun", "modere", "important"])}</div>
+          </div>
+        </div>
+        <p class="small-text">En déficit léger, ce sont les repas protéinés qui décident si tu perds du gras ou du muscle. Vise 3 repas apportant chacun une source protéinée franche — le reste suit. Ces lignes partent dans le briefing du coach.</p>
+      </section>
+    `;
+  }
+
   function EveningReview() {
     return `
       <section class="form-panel">
@@ -4502,14 +4564,17 @@
             <p class="eyebrow">Bilan du soir</p>
             <h2>Ce qui a vraiment été réalisé</h2>
           </div>
-          <div class="head-badges">${StatusBadge(labelFor("completion", evening().completion), "info")}${SaveBadge()}</div>
+          <div class="head-badges">${
+            evening().touched
+              ? StatusBadge(labelFor("completion", evening().completion), evening().completion === "none" ? "bad" : "good")
+              : StatusBadge("À remplir", "watch")
+          }${SaveBadge()}</div>
         </div>
         <div class="form-grid">
           <div class="field full">
-            <label for="completion">La séance prévue a-t-elle été réalisée ?</label>
-            <select id="completion" data-scope="evening" data-key="completion">
-              ${["complete", "adaptee", "partial", "none", "rest"].map((value) => `<option value="${value}" ${evening().completion === value ? "selected" : ""}>${labelFor("completion", value)}</option>`).join("")}
-            </select>
+            <span class="label">La séance prévue a-t-elle été réalisée ?</span>
+            ${QuickStatusChips(dateKey())}
+            <p class="small-text">Même déclaration que dans la Synthèse : les deux écrans écrivent au même endroit.</p>
           </div>
           <div class="field">
             <label for="duration">Durée réelle</label>
@@ -4549,32 +4614,9 @@
     `;
   }
 
-  function CoachSummary(decision, readiness) {
-    const vigilance =
-      morning().pain !== "aucune"
-        ? `Douleur ${labelFor("pain", morning().pain).toLowerCase()} a surveiller.`
-        : readiness.score < 78
-          ? "Ne pas transformer une journee moyenne en surcharge."
-          : "Eviter l'echec musculaire inutile sur les series lourdes.";
-    return `
-      <section class="card coach-summary">
-        <div class="card-head">
-          <div>
-            <p class="eyebrow">Résumé du coach</p>
-            <h2>${escapeHtml(decision.label)}</h2>
-          </div>
-          ${ConfidenceBadge(decision.confidence)}
-        </div>
-        <div class="summary-grid">
-          <div><span>Raison</span><p>${escapeHtml(decision.reason)}</p></div>
-          <div><span>Point de vigilance</span><p>${escapeHtml(vigilance)}</p></div>
-          <div><span>24 prochaines heures</span><p>${escapeHtml(decision.next24)}</p></div>
-          <div><span>Priorité nutrition</span><p>${escapeHtml(decision.nutrition)}</p></div>
-          <div><span>Priorité récupération</span><p>${escapeHtml(decision.recovery)}</p></div>
-        </div>
-      </section>
-    `;
-  }
+  // v7.9.0 : CoachSummary() retiré — son titre et sa raison répétaient mot
+  // pour mot CoachDecisionCard ; ce qu'elle disait d'unique y est replié.
+
 
   function DataSourceStatus(compact = false) {
     const sources = [
@@ -5041,14 +5083,9 @@
           health
             ? `<div class="stat-grid">
                 <div class="stat-tile"><span>Fichier</span><strong>${escapeHtml(health.fileName)}</strong></div>
-                <div class="stat-tile"><span>Enregistrements lus</span><strong>${health.records}</strong></div>
-                <div class="stat-tile"><span>Poids</span><strong>${health.weightKg ? `${health.weightKg} kg` : "Absent"}</strong></div>
-                <div class="stat-tile"><span>FC repos</span><strong>${health.rhr ? `${rounded(health.rhr)} bpm` : "Absent"}</strong></div>
-                <div class="stat-tile"><span>HRV</span><strong>${health.hrvMs ? `${rounded(health.hrvMs)} ms` : "Absent"}</strong></div>
-                <div class="stat-tile"><span>Sommeil</span><strong>${health.sleepMinutes ? formatMinutes(rounded(health.sleepMinutes)) : "Absent"}</strong></div>
-                <div class="stat-tile"><span>VO2 estimée</span><strong>${health.vo2 ? rounded(health.vo2) : "Absent"}</strong></div>
-                <div class="stat-tile"><span>Pas</span><strong>${health.steps ? rounded(health.steps) : "Absent"}</strong></div>
-              </div>`
+                <div class="stat-tile"><span>Enregistrements lus</span><strong>${(health.records || 0).toLocaleString("fr-FR")}</strong></div>
+              </div>
+              <p class="small-text">Les valeurs elles-mêmes sont dans la carte « Données importées », en haut de cet onglet — ce panneau ne dit que ce que l'import a lu. (v8.0.0 : les six tuiles qui les répétaient ici ont été retirées.)</p>`
             : `<div class="empty-state">
                 <strong>Aucune donnée importée</strong>
                 <p>Après import, les cartes de récupération et l’onglet Santé utiliseront tes données disponibles au lieu de la démo.</p>
@@ -6174,11 +6211,11 @@
           .map(
             (exercise, index) => `
               <div class="exo-row">
-                <input type="text" list="exo-list" placeholder="Développé couché" value="${escapeHtml(exercise.name)}" data-draft-ex="${index}" data-field="name" />
-                <input type="number" inputmode="decimal" step="0.5" min="0" placeholder="80" value="${escapeHtml(exercise.weight)}" data-draft-ex="${index}" data-field="weight" />
-                <input type="number" inputmode="numeric" min="1" max="50" placeholder="6" value="${escapeHtml(exercise.reps)}" data-draft-ex="${index}" data-field="reps" />
-                <input type="number" inputmode="numeric" min="1" max="12" placeholder="4" value="${escapeHtml(exercise.sets)}" data-draft-ex="${index}" data-field="sets" />
-                <input type="number" inputmode="decimal" step="0.5" min="1" max="10" placeholder="7,5" value="${escapeHtml(exercise.rpe)}" data-draft-ex="${index}" data-field="rpe" />
+                <input type="text" list="exo-list" placeholder="Nom de l'exercice" value="${escapeHtml(exercise.name)}" data-draft-ex="${index}" data-field="name" />
+                <input type="number" inputmode="decimal" step="0.5" min="0" placeholder="kg" value="${escapeHtml(exercise.weight)}" data-draft-ex="${index}" data-field="weight" />
+                <input type="number" inputmode="numeric" min="1" max="50" placeholder="reps" value="${escapeHtml(exercise.reps)}" data-draft-ex="${index}" data-field="reps" />
+                <input type="number" inputmode="numeric" min="1" max="12" placeholder="séries" value="${escapeHtml(exercise.sets)}" data-draft-ex="${index}" data-field="sets" />
+                <input type="number" inputmode="decimal" step="0.5" min="1" max="10" placeholder="RPE" value="${escapeHtml(exercise.rpe)}" data-draft-ex="${index}" data-field="rpe" />
                 <button type="button" class="ghost-button exo-remove" data-action="remove-exercise-row" data-index="${index}" aria-label="Retirer">✕</button>
               </div>
             `
@@ -6664,27 +6701,23 @@
 
     const signalsResult = computeCoachSignals();
     const panes = {
+      // v7.9.0 : la Synthèse répond à « où j'en suis et que dois-je faire »,
+      // rien de plus. Tout ce qui se remplit pendant la séance vit dans
+      // l'onglet Séance — les sept cartes dupliquées ici en faisaient une page
+      // de 14 000 pixels que personne ne pouvait parcourir.
       summary: `
         <div class="today-grid">
           <div class="page-grid">
             ${RingsRow(readiness)}
             ${QuickSessionCard()}
-            ${CalfTestCard()}
-            ${PrescriptionCard()}
-            ${RunStepsCard()}
-            ${RunPrescriptionCard()}
-            ${NotFullCard()}
-            ${MicroCard()}
-            ${WeatherCard()}
+            ${CoachDecisionCard(decision)}
             ${MissingCard()}
             ${GaugeGrid()}
-            ${CoachDecisionCard(decision)}
             ${DeloadCard(signalsResult)}
           </div>
           <aside class="page-grid">
             ${SignalsCard(signalsResult)}
             ${factors}
-            ${CoachSummary(decision, readiness)}
           </aside>
         </div>
       `,
@@ -6696,7 +6729,6 @@
       `,
       workout: `
         <div class="page-grid">
-          ${QuickSessionCard()}
           ${CalfTestCard()}
           ${PlyoCard()}
           ${PrescriptionCard()}
@@ -6705,18 +6737,16 @@
           ${NotFullCard()}
           ${MicroCard()}
           ${WeatherCard()}
-          <div class="section-grid">
-            ${WorkoutCard(decision)}
-            ${CoachSummary(decision, readiness)}
-          </div>
+          ${WorkoutCard(decision)}
           ${WorkoutLogCard()}
           ${TodayWorkoutsList()}
           ${TodayActivitiesCard()}
         </div>
       `,
       evening: `
-        <div class="section-grid">
+        <div class="page-grid">
           ${EveningReview()}
+          ${NutritionCard()}
         </div>
       `,
       history: `
@@ -7634,14 +7664,26 @@
             </div>
             <p class="small-text">Ces valeurs viennent de ton fichier Apple Santé. Les tendances longues seront plus fiables après plusieurs imports ou une synchronisation récurrente.</p>
             <div class="stat-grid wide">
-              <div class="stat-tile"><span>Poids</span><strong>${health.weightKg ? `${health.weightKg} kg` : "Absent"}</strong></div>
-              <div class="stat-tile"><span>FC repos</span><strong>${health.rhr ? `${rounded(health.rhr)} bpm` : "Absent"}</strong></div>
-              <div class="stat-tile"><span>HRV</span><strong>${health.hrvMs ? `${rounded(health.hrvMs)} ms` : "Absent"}</strong></div>
-              <div class="stat-tile"><span>Sommeil</span><strong>${health.sleepMinutes ? formatMinutes(rounded(health.sleepMinutes)) : "Absent"}</strong></div>
-              <div class="stat-tile"><span>VO2 estimée</span><strong>${health.vo2 ? rounded(health.vo2) : "Absent"}</strong></div>
-              <div class="stat-tile"><span>Pas</span><strong>${health.steps ? rounded(health.steps) : "Absent"}</strong></div>
-              <div class="stat-tile"><span>Distance marche/course</span><strong>${health.distanceKm ? `${health.distanceKm.toFixed(1)} km` : "Absent"}</strong></div>
-              <div class="stat-tile"><span>Import</span><strong>${formatShortDate(health.importedAt)}</strong></div>
+              ${[
+                { metric: "weight", label: "Poids", value: health.weightKg ? `${frNumber(health.weightKg, 1)} kg` : "Absent" },
+                { metric: "rhr", label: "FC repos", value: health.rhr ? `${rounded(health.rhr)} bpm` : "Absent" },
+                { metric: "hrv", label: "HRV", value: health.hrvMs ? `${rounded(health.hrvMs)} ms` : "Absent" },
+                { metric: "sleep", label: "Sommeil", value: health.sleepMinutes ? formatMinutes(rounded(health.sleepMinutes)) : "Absent" },
+                { metric: null, label: "VO2 estimée", value: health.vo2 ? rounded(health.vo2) : "Absent" },
+                { metric: "steps", label: "Pas", value: health.steps ? rounded(health.steps).toLocaleString("fr-FR") : "Absent" },
+                { metric: null, label: "Distance marche/course", value: health.distanceKm ? `${frNumber(health.distanceKm, 1)} km` : "Absent" },
+                { metric: null, label: "Import", value: formatShortDate(health.importedAt) },
+              ]
+                .map((tile) => {
+                  const inner = `<span>${escapeHtml(tile.label)}</span><strong>${escapeHtml(String(tile.value))}</strong>`;
+                  // v8.0.0 : les mêmes indicateurs ouvrent leur fiche de lecture
+                  // depuis la Synthèse. Ne pas les rendre cliquables ici
+                  // apprenait à l'utilisateur un geste qui ne marchait qu'à moitié.
+                  return tile.metric && tile.value !== "Absent"
+                    ? `<button type="button" class="stat-tile tappable" data-action="open-metric" data-metric="${tile.metric}">${inner}</button>`
+                    : `<div class="stat-tile">${inner}</div>`;
+                })
+                .join("")}
             </div>
           </section>
           ${renderImportPanel()}
@@ -8026,6 +8068,8 @@
     if (microSkipped.length) missing.push(`aucune micro-session cochée sur ${microSkipped.length} jour(s)`);
     const mondaysNoTest = keys.filter((key) => calfTestDay(key) && !state.journal[key]?.calfTest?.done);
     if (mondaysNoTest.length) missing.push(`tests mollet du lundi non renseignés (${mondaysNoTest.length} lundi(s))`);
+    const noNutrition = keys.filter((key) => !state.journal[key]?.nutrition?.touched);
+    if (noNutrition.length >= 3) missing.push(`nutrition non renseignée sur ${noNutrition.length} jour(s)`);
     const plyoDaysNoLog = keys.filter((key) => plyoDay(key) && !plyoLog(key)?.done);
     if (plyoDaysNoLog.length) missing.push(`pliométrie non déclarée sur ${plyoDaysNoLog.length} séance(s) Haut A/B`);
     if (missing.length) {
@@ -8902,6 +8946,7 @@
     if (scope === "nutrition") nutrition().touched = true;
     if (scope === "calfTest") day().calfTest.done = true; // saisir un résultat vaut « tests faits »
     if (scope === "plyo" && day().plyo.quality) day().plyo.done = true;
+    if (scope === "nutrition") day().nutrition.touched = true;
   }
 
   function updateStateFromField(target) {

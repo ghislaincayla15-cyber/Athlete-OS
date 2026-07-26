@@ -3583,3 +3583,53 @@ body.light .ring {
   line-height: 1.25;
   color: var(--muted);
 }
+
+/* v7.9.0 — détail replié dans la carte de décision */
+.decision-detail {
+  display: grid;
+  gap: 11px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.decision-detail span {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.62;
+}
+
+.decision-detail p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  opacity: 0.92;
+}
+
+/* v8.0.0 — tuiles Santé cliquables */
+button.stat-tile {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.stat-tile.tappable:hover {
+  border-color: var(--volt, #c0f04a);
+}
+
+button.stat-tile.tappable::after {
+  content: "›";
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 0.9rem;
+  opacity: 0.45;
+}
+
+.stat-tile { position: relative; }
