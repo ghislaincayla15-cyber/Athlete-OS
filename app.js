@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.0.0";
+  const APP_VERSION = "7.1.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -187,6 +187,7 @@
     sessionDraft: null, // v7.0.0 : brouillon de séance pré-rempli depuis la prescription
     runDraft: null, // v7.0.0 : saisie de course par écart
     restTimer: null, // v7.0.0 : minuteur de repos { name, endsAt }
+    notFullOpen: "", // v7.1.0 : jour dont la version allégée est dépliée
     expandedProgramDay: null,
     journal: {},
     program: {
@@ -2065,18 +2066,22 @@
               points: [scoreRestingHeartRate(importedHealth.rhr) - 2, scoreRestingHeartRate(importedHealth.rhr), scoreRestingHeartRate(importedHealth.rhr)],
             }
           : null,
-      load: hasTrainingData()
-        ? {
-            key: "load",
-            label: "Charge récente",
-            value: demo.recovery.loadLabel,
-            score: demo.recovery.loadScore,
-            trend: demo.recovery.loadTrend,
-            status: "Maîtrisée",
-            influence: "Volume récent compatible avec la séance",
-            points: [70, 72, 78, 82, 80, 79, 78],
-          }
-        : null,
+      load: (() => {
+        // v7.1.0 : ratio charge aiguë (7 j) / charge chronique (28 j).
+        const load = acwr();
+        const verdict = acwrVerdict(load.ratio);
+        if (load.ratio === null && load.daysWithData === 0) return null;
+        return {
+          key: "load",
+          label: "Charge récente",
+          value: load.ratio === null ? "—" : String(load.ratio).replace(".", ","),
+          score: verdict.score,
+          trend: load.ratio === null ? `${load.daysWithData} jour(s) de données sur 28` : `Aiguë ${load.acuteAvg}/j · chronique ${load.chronicAvg}/j`,
+          status: verdict.label,
+          influence: verdict.why,
+          points: [verdict.score - 4, verdict.score - 2, verdict.score],
+        };
+      })(),
       subjective: morning().completed
         ? {
             key: "subjective",
@@ -2540,6 +2545,221 @@
   function positionIn(value, min, max) {
     if (!Number.isFinite(value)) return null;
     return clamp(((value - min) / (max - min)) * 100, 0, 100);
+  }
+
+  // ---- v7.1.0 : charge d'entraînement (ACWR) et courses structurées ----
+  // Lot C du plan v8. Le facteur « Charge récente » du readiness pointait
+  // encore sur les données de démonstration retirées en v5.3 : il était donc
+  // toujours nul. Il est remplacé par un ratio charge aiguë / charge chronique,
+  // le marqueur le plus utile pour un mollet qui sort de rééducation.
+
+  // Charge d'une journée, en unités arbitraires mais cohérentes entre elles :
+  // durée × facteur d'intensité. La FC quand on l'a, sinon un défaut par type.
+  function intensityFactor(workout) {
+    const hr = Number(workout?.hr);
+    if (Number.isFinite(hr) && hr > 0) {
+      if (hr >= 170) return 2.2;
+      if (hr >= 155) return 1.8;
+      if (hr >= 140) return 1.4;
+      if (hr >= 120) return 1;
+      return 0.7;
+    }
+    if (workout?.type === "course") return /fraction/i.test(workout.kind || "") ? 1.8 : 1.2;
+    return 1;
+  }
+
+  function dailyLoad(key) {
+    const entry = journalEntry(key);
+    if (!entry) return 0;
+    let load = 0;
+    (entry.workouts || []).forEach((workout) => {
+      if (workout.type === "course") {
+        const duration = Number(workout.duration) || 0;
+        load += duration * intensityFactor(workout);
+        return;
+      }
+      // Muscu : durée réelle si le bilan du soir la donne, sinon la durée prescrite.
+      const declared = Number(entry.evening?.duration);
+      const minutes = Number.isFinite(declared) && declared > 5 ? declared : 60;
+      const rpe = Number(workout.exercises?.[0]?.rpe) || Number(entry.evening?.rpe) || 7;
+      load += minutes * (rpe / 10) * 1.1;
+    });
+    (entry.activities || []).forEach((activity) => {
+      if (!activity.neat) return;
+      load += (Number(activity.duration) || 0) * 0.4; // marche : charge réelle mais faible
+    });
+    return Math.round(load);
+  }
+
+  function acwr() {
+    let acute = 0;
+    let chronic = 0;
+    let daysWithData = 0;
+    for (let i = 0; i < 28; i++) {
+      const value = dailyLoad(keyOffset(i));
+      if (value > 0) daysWithData += 1;
+      chronic += value;
+      if (i < 7) acute += value;
+    }
+    if (daysWithData < 4) return { ratio: null, acute, chronic, daysWithData };
+    const acuteAvg = acute / 7;
+    const chronicAvg = chronic / 28;
+    const ratio = chronicAvg > 0 ? Math.round((acuteAvg / chronicAvg) * 100) / 100 : null;
+    return { ratio, acute: Math.round(acute), chronic: Math.round(chronic), acuteAvg: Math.round(acuteAvg), chronicAvg: Math.round(chronicAvg), daysWithData };
+  }
+
+  function acwrVerdict(ratio) {
+    if (ratio === null) return { label: "Historique insuffisant", tone: "info", score: 70, why: "Il faut au moins 4 jours de données sur 4 semaines pour calculer un ratio fiable." };
+    if (ratio < 0.8) return { label: "Sous-charge", tone: "watch", score: 78, why: "La charge des 7 derniers jours est basse par rapport à ton habitude : la forme se maintient mal si ça dure." };
+    if (ratio <= 1.3) return { label: "Zone optimale", tone: "good", score: 88, why: "Progression maîtrisée : la charge récente reste dans la continuité des 4 dernières semaines." };
+    if (ratio <= 1.5) return { label: "Montée rapide", tone: "watch", score: 70, why: "La charge grimpe plus vite que ta base. Sur un mollet en reprise, c'est le moment de ne pas ajouter de volume." };
+    return { label: "Pic de charge", tone: "bad", score: 55, why: "Charge aiguë nettement supérieure à ta base : c'est la zone où le risque de blessure augmente. Priorité à la récupération." };
+  }
+
+  // ---- Courses structurées, adaptées à la semaine et au statut mollet ----
+  // Remplace la liste générique par la séquence réelle du jour (adoption Runna).
+  function calfAlertsCount(daysBack = 28) {
+    let alerts = 0;
+    for (let i = 0; i < daysBack; i++) {
+      const entry = journalEntry(keyOffset(i));
+      if (Number(entry?.evening?.calfPain) > 3) alerts += 1;
+    }
+    return alerts;
+  }
+
+  function runStepsFor(key = dateKey()) {
+    const session = programActive(key) ? programSessionFor(key) : null;
+    if (!session || session.kind !== "course") return null;
+    const week = programWeek(key) || 0;
+    const isLong = actualWeekday(key) === 6; // samedi = course longue
+    const alerts = calfAlertsCount();
+    const clean = alerts === 0;
+    const base = isLong ? (week <= 1 ? 45 : week <= 3 ? 50 : 55) : week <= 1 ? 35 : 40;
+
+    const steps = [
+      { label: "Échauffement", detail: "5 min marche rapide puis 5 min trot très lent", minutes: 10, impact: false },
+      {
+        label: "Corps de séance",
+        detail: `${base} min en zone 2 stricte — tu dois pouvoir tenir une conversation en phrases complètes du début à la fin`,
+        minutes: base,
+        impact: true,
+      },
+    ];
+
+    // Lignes droites dès S4 sur la course longue, si le mollet est resté muet.
+    if (isLong && week >= 4) {
+      steps.push(
+        clean
+          ? { label: "Lignes droites", detail: "6 × 15-20 s en accélération progressive à ~85 %, récupération marche 45 s", minutes: 7, impact: true, calf: true }
+          : { label: "Lignes droites — reportées", detail: `${alerts} alerte(s) mollet sur les 4 dernières semaines : on reste en zone 2 tant que le mollet n'est pas muet 3 semaines d'affilée`, minutes: 0, impact: false }
+      );
+    }
+
+    // Fractionné doux dès S7 sur la course courte, uniquement si zéro alerte.
+    if (!isLong && week >= 7) {
+      steps.push(
+        clean
+          ? { label: "Fractionné doux", detail: "6 × 2 min à allure soutenue mais contrôlée, récupération 2 min de trot", minutes: 24, impact: true, calf: true }
+          : { label: "Fractionné — reporté", detail: `${alerts} alerte(s) mollet enregistrée(s) : la base aérobie prime, on garde la zone 2`, minutes: 0, impact: false }
+      );
+    }
+
+    steps.push({ label: "Retour au calme", detail: "5 min de trot très lent puis marche", minutes: 5, impact: false });
+
+    const total = steps.reduce((sum, step) => sum + step.minutes, 0);
+    return { title: session.title, steps, total, week, clean, alerts };
+  }
+
+  function RunStepsCard(key = dateKey()) {
+    const plan = runStepsFor(key);
+    if (!plan) return "";
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Déroulé de la course</p>
+            <h2>${escapeHtml(plan.title)}</h2>
+          </div>
+          ${StatusBadge(`${plan.total} min au total`, "info")}
+        </div>
+        <ol class="run-steps">
+          ${plan.steps
+            .map(
+              (step) => `
+              <li class="run-step ${step.minutes === 0 ? "skipped" : ""}">
+                <span class="run-step-time">${step.minutes ? `${step.minutes} min` : "—"}</span>
+                <span class="run-step-body">
+                  <strong>${escapeHtml(step.label)}</strong>
+                  <span>${escapeHtml(step.detail)}</span>
+                  ${step.calf ? `<span class="run-step-calf">⚠️ Douleur mollet > 3/10 → tu passes en marche et tu l'notes au bilan</span>` : ""}
+                </span>
+              </li>
+            `
+            )
+            .join("")}
+        </ol>
+        <p class="small-text">${
+          plan.clean
+            ? "Aucune alerte mollet sur les 4 dernières semaines : la progression suit le plan."
+            : `${plan.alerts} alerte(s) mollet enregistrée(s) sur 4 semaines — les étapes à impact restent bridées tant que ça ne s'est pas calmé.`
+        }</p>
+      </section>
+    `;
+  }
+
+  // ---- « Pas à 100 % » : proposer la variante allégée plutôt que subir ou annuler ----
+  function lightenedSession(key = dateKey()) {
+    const session = programActive(key) ? programSessionFor(key) : null;
+    if (!session) return null;
+    if (session.kind === "course") {
+      return {
+        title: "Version allégée",
+        lines: [
+          "Durée réduite d'un tiers, zone 2 stricte sans aucune accélération.",
+          "Si le mollet parle ou que l'essoufflement arrive vite : marche rapide 30 min, ça reste une séance.",
+        ],
+      };
+    }
+    if (session.kind === "muscu") {
+      return {
+        title: "Version allégée",
+        lines: [
+          "Retire une série par exercice et plafonne le RPE à 6 : tu gardes le mouvement, tu enlèves la fatigue.",
+          "Les charges prescrites restent les mêmes — on ne baisse pas le poids, on baisse le volume.",
+          "Pliométrie et exercices à impact : sautés aujourd'hui.",
+        ],
+      };
+    }
+    return null;
+  }
+
+  function NotFullCard(key = dateKey()) {
+    const session = programActive(key) ? programSessionFor(key) : null;
+    if (!session || session.kind === "repos") return "";
+    const light = lightenedSession(key);
+    if (!light) return "";
+    const open = state.notFullOpen === key;
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Si la journée est difficile</p>
+            <h2>Pas à 100 % aujourd'hui ?</h2>
+          </div>
+        </div>
+        <p class="small-text">Une séance allégée vaut toujours mieux qu'une séance sautée : elle entretient l'habitude et la technique sans creuser la fatigue.</p>
+        <button type="button" class="ghost-button" data-action="toggle-not-full">${open ? "Masquer la version allégée" : "Voir la version allégée"}</button>
+        ${
+          open
+            ? `<div class="notice" style="margin-top:12px">
+                <strong>${escapeHtml(light.title)}</strong>
+                ${light.lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+              </div>
+              <button type="button" class="primary-button" style="margin-top:10px" data-action="apply-not-full">${icon("check")}J'adopte la version allégée</button>`
+            : ""
+        }
+      </section>
+    `;
   }
 
   // ---- v7.0.0 : moteur de prescription et saisie par écart ----
@@ -5904,7 +6124,9 @@
             ${QuickSessionCard()}
             ${CalfTestCard()}
             ${PrescriptionCard()}
+            ${RunStepsCard()}
             ${RunPrescriptionCard()}
+            ${NotFullCard()}
             ${MicroCard()}
             ${WeatherCard()}
             ${MissingCard()}
@@ -5930,7 +6152,9 @@
           ${QuickSessionCard()}
           ${CalfTestCard()}
           ${PrescriptionCard()}
+          ${RunStepsCard()}
           ${RunPrescriptionCard()}
+          ${NotFullCard()}
           ${MicroCard()}
           ${WeatherCard()}
           <div class="section-grid">
@@ -6904,6 +7128,16 @@
       lines.push("- Aucun import Apple Santé pour l'instant");
     }
 
+    const load = acwr();
+    if (load.ratio !== null) {
+      const verdict = acwrVerdict(load.ratio);
+      lines.push(`- Charge d'entraînement (ACWR 7 j / 28 j) : ${String(load.ratio).replace(".", ",")} — ${verdict.label}`);
+    }
+    const runPlan = runStepsFor(today);
+    if (runPlan) {
+      lines.push(`- Course du jour : ${runPlan.steps.filter((step) => step.minutes).map((step) => `${step.label} ${step.minutes} min`).join(" → ")}`);
+    }
+
     const keys = briefingDayKeys(days);
     lines.push("");
     lines.push(`## Journal des ${days} derniers jours (${keys.length} jour(s) renseigné(s))`);
@@ -7317,6 +7551,27 @@
     if (action === "close-exercise") {
       state.openExercise = null;
       state.openExerciseDetail = "";
+    }
+    if (action === "toggle-not-full") {
+      state.notFullOpen = state.notFullOpen === dateKey() ? "" : dateKey();
+    }
+    if (action === "apply-not-full") {
+      const session = programSessionFor();
+      logDecision(
+        "adaptation",
+        "Version allégée adoptée",
+        "Journée déclarée « pas à 100 % » par l'athlète",
+        "Déclaration volontaire avant la séance",
+        "Eleve"
+      );
+      day().adaptationConfirmed = true;
+      state.notFullOpen = "";
+      addCoachMessage(
+        "coach",
+        session?.kind === "course"
+          ? "Version allégée notée : durée réduite d'un tiers, zone 2 stricte. C'est tracé dans l'historique des décisions."
+          : "Version allégée notée : une série de moins par exercice, RPE plafonné à 6, pas d'impact. Les charges restent identiques."
+      );
     }
     if (action === "toggle-warmup") {
       harvestPrescribed();

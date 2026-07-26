@@ -3162,3 +3162,31 @@ body.light .ring {
   font-size: 0.82rem;
   line-height: 1.45;
 }
+
+/* v7.1.0 — déroulé de course */
+.run-steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; counter-reset: step; }
+
+.run-step {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+.run-step.skipped { opacity: 0.55; border-style: dashed; }
+
+.run-step-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--volt, #C0F04A);
+  padding-top: 1px;
+}
+.run-step.skipped .run-step-time { color: var(--muted); }
+
+.run-step-body { display: block; }
+.run-step-body strong { display: block; margin-bottom: 3px; font-size: 0.88rem; letter-spacing: -0.01em; }
+.run-step-body > span { display: block; color: var(--muted); font-size: 0.79rem; line-height: 1.45; }
+.run-step-calf { margin-top: 6px; color: var(--watch, #F0B84A) !important; font-size: 0.76rem !important; }
