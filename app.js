@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.8.0";
+  const APP_VERSION = "5.9.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -173,6 +173,7 @@
     movePickerOpen: false,
     openExercise: null,
     openExerciseDetail: "",
+    openMetric: null,
     expandedProgramDay: null,
     journal: {},
     program: {
@@ -2481,7 +2482,7 @@
   }
 
   // Jauge de position dans une plage, comme un thermomètre : on voit d'un coup si on est dedans.
-  function GaugeTile({ label, value, unit, hint, position, tone = "good", status, band, target: gotoTarget, focus }) {
+  function GaugeTile({ label, value, unit, hint, position, tone = "good", status, band, target: gotoTarget, focus, metric }) {
     const empty = position === null || position === undefined;
     const inner = `
       <div class="gauge-text">
@@ -2495,6 +2496,9 @@
         ${empty ? "" : `<span class="gauge-dot" style="--pos:${clamp(position, 3, 97)}%"></span>`}
       </div>
     `;
+    // v5.9.0 : une tuile ouvre d'abord sa fiche de lecture (échelle + cible).
+    // Le raccourci de saisie vit désormais dans la fiche, pas sur la tuile.
+    if (metric) return `<button type="button" class="gauge-tile tappable" data-action="open-metric" data-metric="${escapeHtml(metric)}">${inner}</button>`;
     if (!gotoTarget) return `<article class="gauge-tile">${inner}</article>`;
     return `<button type="button" class="gauge-tile tappable" data-goto="${gotoTarget}"${focus ? ` data-goto-focus="${focus}"` : ""}>${inner}</button>`;
   }
@@ -2502,6 +2506,248 @@
   function positionIn(value, min, max) {
     if (!Number.isFinite(value)) return null;
     return clamp(((value - min) / (max - min)) * 100, 0, 100);
+  }
+
+  // ---- v5.9.0 : fiches de lecture des indicateurs ----
+  // Un chiffre nu ne veut rien dire. Chaque tuile ouvre une fiche qui donne
+  // l'échelle de référence, où l'athlète se situe, et la cible liée à SES objectifs.
+  const ATHLETE = { heightCm: 171 };
+
+  function scaleRow(zone, active) {
+    return `<div class="metric-zone ${active ? "active" : ""} ${zone.tone}">
+      <span class="metric-zone-range">${escapeHtml(zone.range)}</span>
+      <span class="metric-zone-label">${escapeHtml(zone.label)}</span>
+    </div>`;
+  }
+
+  function waistRatio(waistCm) {
+    return Math.round((waistCm / ATHLETE.heightCm) * 1000) / 1000;
+  }
+
+  function waistHistory() {
+    return Object.keys(state.journal || {})
+      .filter((key) => Number(state.journal[key]?.waist) > 0)
+      .sort()
+      .reverse()
+      .map((key) => ({ key, value: Number(state.journal[key].waist) }));
+  }
+
+  function metricSheetData(id) {
+    const health = state.imports?.health || {};
+    const weight = weightSummary();
+
+    if (id === "waist") {
+      const history = waistHistory();
+      const current = history[0] || null;
+      const ratio = current ? waistRatio(current.value) : null;
+      const targetCm = Math.round(ATHLETE.heightCm * 0.5 * 10) / 10;
+      const first = history[history.length - 1] || null;
+      const delta = current && first && history.length > 1 ? Math.round((current.value - first.value) * 10) / 10 : null;
+      const zones = [
+        { range: "< 0,50", label: "Zone saine", tone: "good" },
+        { range: "0,50 – 0,59", label: "Adiposité augmentée — « prendre soin »", tone: "watch" },
+        { range: "≥ 0,60", label: "Adiposité élevée — « agir »", tone: "bad" },
+      ];
+      const activeIndex = ratio === null ? -1 : ratio < 0.5 ? 0 : ratio < 0.6 ? 1 : 2;
+      return {
+        title: "Tour de taille",
+        current: current ? `${String(current.value).replace(".", ",")} cm` : "—",
+        currentNote: current
+          ? `Mesuré le ${formatFrDate(current.key)} · rapport tour de taille / stature = ${String(ratio).replace(".", ",")}`
+          : "Aucune mesure enregistrée.",
+        history:
+          history.length > 1
+            ? `${history.length} mesures · ${delta > 0 ? "+" : ""}${String(delta).replace(".", ",")} cm depuis la première (${formatFrDate(first.key)}).`
+            : "Une seule mesure : il faut au moins un mois pour lire une tendance.",
+        scaleTitle: "Échelle de référence (NICE 2022, rapport tour de taille / stature)",
+        zones,
+        activeIndex,
+        target: `Ta cible : passer sous ${String(targetCm).replace(".", ",")} cm — la règle est « garder son tour de taille sous la moitié de sa stature » (tu mesures ${ATHLETE.heightCm} cm).${
+          current && current.value > targetCm
+            ? ` Il te reste ${String(Math.round((current.value - targetCm) * 10) / 10).replace(".", ",")} cm à perdre, soit environ ${Math.ceil((current.value - targetCm) / 1.5)} mois à un rythme réaliste de 1 à 2 cm par mois.`
+            : ""
+        }`,
+        why:
+          "C'est le juge de paix numéro un de ta priorité n°2 (réduire la masse grasse). Il est plus fiable que le poids seul, qui varie avec l'eau et le glycogène. À mesurer une fois par mois, au réveil, à jeun, au niveau du nombril, sans rentrer le ventre.",
+        cta: { label: "Mettre à jour la mesure", goto: "today:checkin", focus: "waist" },
+      };
+    }
+
+    if (id === "weight") {
+      const zones = [
+        { range: "0 à −0,25 kg/sem", label: "Trop lent pour un déficit", tone: "watch" },
+        { range: "−0,25 à −0,5 kg/sem", label: "Rythme cible du bloc", tone: "good" },
+        { range: "au-delà de −0,7 kg/sem", label: "Trop rapide — risque de perte musculaire", tone: "bad" },
+      ];
+      const rate = weight.delta;
+      const activeIndex = rate === null ? -1 : rate > -0.25 ? 0 : rate >= -0.7 ? 1 : 2;
+      return {
+        title: "Poids (moyenne 7 jours)",
+        current: weight.avg7 ? `${String(weight.avg7).replace(".", ",")} kg` : "—",
+        currentNote: weight.count7 ? `${weight.count7} pesée(s) sur les 7 derniers jours.` : "Aucune pesée cette semaine.",
+        history:
+          rate === null
+            ? "Pas encore de comparaison possible : il faut deux semaines de pesées pour calculer un rythme."
+            : `Variation de la moyenne 7 j : ${rate > 0 ? "+" : ""}${String(rate).replace(".", ",")} kg par rapport à la semaine précédente.`,
+        scaleTitle: "Rythme de perte visé en recomposition",
+        zones,
+        activeIndex,
+        target:
+          "Ta cible : −0,25 à −0,5 kg par semaine, pas plus. Au-delà, le déficit devient assez agressif pour entamer le muscle — exactement ce que ta priorité n°1 cherche à éviter.",
+        why:
+          "Le poids d'un jour donné ne veut rien dire : il bouge de 1 à 2 kg avec l'hydratation, le sel et le contenu digestif. Seule la moyenne glissante sur 7 jours est lisible. Si tes charges baissent deux semaines de suite, on remonte les apports.",
+        cta: { label: "Saisir mon poids", goto: "today:checkin", focus: "weight" },
+      };
+    }
+
+    if (id === "rhr") {
+      const value = health.rhr ? rounded(health.rhr) : null;
+      const zones = [
+        { range: "< 50 bpm", label: "Profil entraîné en endurance", tone: "good" },
+        { range: "50 – 60 bpm", label: "Bonne condition cardiovasculaire", tone: "good" },
+        { range: "60 – 70 bpm", label: "Correcte", tone: "watch" },
+        { range: "> 70 bpm", label: "À surveiller", tone: "bad" },
+      ];
+      const activeIndex = value === null ? -1 : value < 50 ? 0 : value <= 60 ? 1 : value <= 70 ? 2 : 3;
+      return {
+        title: "Fréquence cardiaque de repos",
+        current: value ? `${value} bpm` : "—",
+        currentNote: value ? "Dernière valeur importée depuis Apple Santé." : "Aucune valeur importée.",
+        history: "L'import ne conserve que la dernière valeur : l'app ne peut pas encore afficher ta moyenne personnelle. C'est une limite connue, pas une absence de donnée.",
+        scaleTitle: "Repères généraux",
+        zones,
+        activeIndex,
+        target:
+          "Ta vraie référence n'est pas cette échelle, c'est toi. Une FC de repos stable ou qui baisse doucement au fil du bloc signe une base aérobie qui progresse. Le signal à retenir : +5 bpm au-dessus de ton habitude pendant plusieurs jours = fatigue accumulée, nuit courte, alcool ou début d'infection — on allège.",
+        why: "Un des marqueurs les plus simples de ta récupération, et il pèse 15 % du score de readiness.",
+        cta: { label: "Importer Apple Santé", goto: "today:data" },
+      };
+    }
+
+    if (id === "sleep") {
+      const minutes = health.sleepMinutes ? rounded(health.sleepMinutes) : null;
+      const zones = [
+        { range: "< 6 h", label: "Insuffisant — récupération compromise", tone: "bad" },
+        { range: "6 h – 7 h", label: "Juste", tone: "watch" },
+        { range: "7 h – 9 h", label: "Recommandé pour un adulte", tone: "good" },
+      ];
+      const activeIndex = minutes === null ? -1 : minutes < 360 ? 0 : minutes < 420 ? 1 : 2;
+      return {
+        title: "Sommeil",
+        current: minutes ? formatMinutes(minutes) : "—",
+        currentNote: minutes ? "Dernière nuit importée." : "Aucune nuit importée.",
+        history: "Comme la FC de repos, seule la dernière nuit est conservée à l'import — la moyenne personnelle n'est pas encore calculable.",
+        scaleTitle: "Repères de durée",
+        zones,
+        activeIndex,
+        target:
+          "Ta cible : 7 h à 8 h 30 par nuit. C'est le levier de récupération le plus puissant dont tu disposes, devant tous les compléments et protocoles — et il pèse 25 % du readiness.",
+        why:
+          "Sur un bloc en déficit calorique, le sommeil est ce qui protège le muscle et la qualité technique des séances lourdes. Une nuit courte se paie sur la séance du lendemain, pas le jour même.",
+        cta: { label: "Importer Apple Santé", goto: "today:data" },
+      };
+    }
+
+    if (id === "hrv") {
+      return {
+        title: "Variabilité cardiaque (HRV)",
+        current: health.hrvMs ? `${rounded(health.hrvMs)} ms` : "—",
+        currentNote: health.hrvMs ? "Dernière valeur importée." : "Aucune valeur : ta montre Garmin n'écrit pas le HRV dans Apple Santé.",
+        history: "Indisponible.",
+        scaleTitle: "Comment ça se lit",
+        zones: [
+          { range: "En absolu", label: "Ne se compare pas d'une personne à l'autre — inutilisable seul", tone: "bad" },
+          { range: "En tendance", label: "Baisse marquée sur 3-4 jours = fatigue ou stress", tone: "watch" },
+          { range: "Ta référence", label: "Ta propre moyenne sur 30 jours", tone: "good" },
+        ],
+        activeIndex: health.hrvMs ? 2 : -1,
+        target:
+          "Rien à faire pour l'instant. Garmin ne synchronise pas cette donnée vers Apple Santé — ce n'est pas un réglage à corriger, la fonction n'existe pas. Il faudrait une application tierce qui lit Garmin Connect et écrit dans Apple Santé.",
+        why:
+          "C'est le facteur le plus lourd du readiness (30 %), donc son absence plafonne mécaniquement la confiance du score. Le readiness reste calculé sur le sommeil, la FC de repos, la charge et ton ressenti — simplement avec une confiance moindre, ce que l'app affiche honnêtement.",
+        cta: null,
+      };
+    }
+
+    if (id === "steps") {
+      const walk = walkStats(7);
+      const perDay = health.stepsAvg ?? health.steps ?? null;
+      const zones = [
+        { range: "< 5 000", label: "Sédentaire", tone: "bad" },
+        { range: "5 000 – 7 500", label: "Peu actif", tone: "watch" },
+        { range: "7 500 – 10 000", label: "Actif", tone: "good" },
+        { range: "> 10 000", label: "Très actif", tone: "good" },
+      ];
+      const activeIndex = perDay === null ? -1 : perDay < 5000 ? 0 : perDay < 7500 ? 1 : perDay <= 10000 ? 2 : 3;
+      return {
+        title: "Pas (moyenne par jour)",
+        current: perDay ? `${perDay.toLocaleString("fr-FR")} pas` : "—",
+        currentNote: "Somme des pas enregistrés, séances comprises.",
+        history: "Sur les 7 derniers jours disponibles.",
+        scaleTitle: "Repères d'activité quotidienne",
+        zones,
+        activeIndex,
+        target:
+          "Ta cible : rester au-dessus de 8 000 pas par jour. C'est de l'activité de fond (NEAT), pas de l'entraînement : ça soutient le déficit sans ajouter de fatigue à récupérer, contrairement à du cardio supplémentaire.",
+        why:
+          "Sur un bloc de recomposition, augmenter la marche est le levier le moins coûteux pour creuser le déficit — il ne concurrence ni tes séances lourdes ni ton mollet.",
+        cta: null,
+      };
+    }
+
+    return null;
+  }
+
+  function MetricSheetModal() {
+    const id = state.openMetric;
+    if (!id) return "";
+    const data = metricSheetData(id);
+    if (!data) return "";
+    return `
+      <div class="sheet-backdrop">
+        <section class="sheet" role="dialog" aria-label="${escapeHtml(data.title)}" data-stop-close>
+          <div class="sheet-head">
+            <div>
+              <p class="eyebrow">Lecture de l'indicateur</p>
+              <h2>${escapeHtml(data.title)}</h2>
+            </div>
+            <button type="button" class="icon-button" data-action="close-metric" aria-label="Fermer">✕</button>
+          </div>
+          <div class="sheet-body">
+            <div class="metric-current">
+              <strong>${escapeHtml(data.current)}</strong>
+              <span>${escapeHtml(data.currentNote)}</span>
+            </div>
+            <div class="sheet-block">
+              <h3>Ton historique</h3>
+              <p>${escapeHtml(data.history)}</p>
+            </div>
+            <div class="sheet-block">
+              <h3>${escapeHtml(data.scaleTitle)}</h3>
+              <div class="metric-scale">
+                ${data.zones.map((zone, index) => scaleRow(zone, index === data.activeIndex)).join("")}
+              </div>
+              ${data.activeIndex >= 0 ? `<p class="small-text">La ligne mise en avant est celle où tu te situes aujourd'hui.</p>` : ""}
+            </div>
+            <div class="sheet-block">
+              <h3>Ta cible</h3>
+              <p>${escapeHtml(data.target)}</p>
+            </div>
+            <div class="sheet-block">
+              <h3>Pourquoi ça compte</h3>
+              <p>${escapeHtml(data.why)}</p>
+            </div>
+            ${
+              data.cta
+                ? `<button type="button" class="primary-button" data-action="metric-goto" data-goto="${escapeHtml(data.cta.goto)}"${
+                    data.cta.focus ? ` data-goto-focus="${escapeHtml(data.cta.focus)}"` : ""
+                  }>${escapeHtml(data.cta.label)}</button>`
+                : ""
+            }
+          </div>
+        </section>
+      </div>
+    `;
   }
 
   function GaugeGrid() {
@@ -2523,11 +2769,12 @@
           tone: rhr <= 62 ? "good" : rhr <= 70 ? "watch" : "bad",
           status: rhr <= 62 ? "Bonne" : rhr <= 70 ? "Correcte" : "Élevée",
           hint: "Plage usuelle 45-70",
+          metric: "rhr",
         })
       );
     } else {
       tiles.push(
-        GaugeTile({ label: "FC de repos", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", target: "today:data" })
+        GaugeTile({ label: "FC de repos", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", metric: "rhr" })
       );
     }
 
@@ -2543,10 +2790,11 @@
           tone: hrv >= 55 ? "good" : hrv >= 40 ? "watch" : "bad",
           status: hrv >= 55 ? "Bonne" : hrv >= 40 ? "Moyenne" : "Basse",
           hint: "Se lit en tendance, pas en absolu",
+          metric: "hrv",
         })
       );
     } else {
-      tiles.push(GaugeTile({ label: "HRV", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", target: "today:data" }));
+      tiles.push(GaugeTile({ label: "HRV", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", metric: "hrv" }));
     }
 
     if (health?.sleepMinutes) {
@@ -2561,10 +2809,11 @@
           tone: minutes >= 420 ? "good" : minutes >= 360 ? "watch" : "bad",
           status: minutes >= 420 ? "Suffisant" : minutes >= 360 ? "Juste" : "Court",
           hint: "Cible 7 h à 8 h 30",
+          metric: "sleep",
         })
       );
     } else {
-      tiles.push(GaugeTile({ label: "Sommeil", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", target: "today:data" }));
+      tiles.push(GaugeTile({ label: "Sommeil", value: "—", unit: "", position: null, status: "À importer", hint: "Apple Santé", metric: "sleep" }));
     }
 
     // Poids : pas de « plage normale », c'est la pente qui compte.
@@ -2589,13 +2838,12 @@
                     ? "Stable"
                     : "En hausse",
           hint: "Cible −0,25 à −0,5 kg/semaine",
-          target: "today:checkin",
-          focus: "weight",
+          metric: "weight",
         })
       );
     } else {
       tiles.push(
-        GaugeTile({ label: "Poids (moy. 7 j)", value: "—", unit: "", position: null, status: "À saisir", hint: "10 secondes le matin", target: "today:checkin", focus: "weight" })
+        GaugeTile({ label: "Poids (moy. 7 j)", value: "—", unit: "", position: null, status: "À saisir", hint: "10 secondes le matin", metric: "weight" })
       );
     }
 
@@ -2614,7 +2862,7 @@
           tone: steps >= 8000 ? "good" : steps >= 5000 ? "watch" : "bad",
           status: steps >= 8000 ? "Bon volume" : steps >= 5000 ? "À augmenter" : "Sédentaire",
           hint: "Cible 8 000 à 10 000/jour",
-          target: "today:data",
+          metric: "steps",
         })
       );
     } else if (perDayMin !== null) {
@@ -2650,10 +2898,9 @@
             tone: waistDue() ? "watch" : "good",
             status: waistDue() ? "À remesurer" : "À jour",
             hint: `Mesuré le ${formatShortDate(waist.key)}`,
-            target: "today:checkin",
-            focus: "waist",
+            metric: "waist",
           })
-        : GaugeTile({ label: "Tour de taille", value: "—", unit: "", position: null, status: "À mesurer", hint: "Référence de départ", target: "today:checkin", focus: "waist" })
+        : GaugeTile({ label: "Tour de taille", value: "—", unit: "", position: null, status: "À mesurer", hint: "Référence de départ", metric: "waist" })
     );
 
     return `
@@ -2670,7 +2917,7 @@
           }
         </div>
         <div class="gauge-grid">${tiles.join("")}</div>
-        <p class="small-text">Le repère à droite de chaque tuile montre où tu te situes dans la plage habituelle. Touche une tuile grise pour aller renseigner la donnée.</p>
+        <p class="small-text">Touche une tuile pour ouvrir sa fiche de lecture : l'échelle de référence, où tu te situes et la cible liée à tes objectifs.</p>
       </section>
     `;
   }
@@ -6362,6 +6609,7 @@
         <nav class="mobile-nav" aria-label="Navigation mobile">${renderNav("mobile")}</nav>
         ${renderSettings()}
         ${ExerciseSheetModal()}
+        ${MetricSheetModal()}
       </div>
     `;
     app.onclick = handleClick;
@@ -6401,6 +6649,7 @@
     if (event.target.closest(".sheet-backdrop") && !event.target.closest(".sheet")) {
       state.openExercise = null;
       state.openExerciseDetail = "";
+      state.openMetric = null;
       persistNow();
       render();
       return;
@@ -6408,6 +6657,7 @@
 
     const gotoButton = event.target.closest("[data-goto]");
     if (gotoButton) {
+      state.openMetric = null; // un raccourci depuis une fiche la referme
       gotoTarget(gotoButton.dataset.goto, gotoButton.dataset.gotoFocus);
       return;
     }
@@ -6481,6 +6731,12 @@
     if (action === "close-exercise") {
       state.openExercise = null;
       state.openExerciseDetail = "";
+    }
+    if (action === "open-metric") {
+      state.openMetric = actionButton.dataset.metric;
+    }
+    if (action === "close-metric") {
+      state.openMetric = null;
     }
     if (action === "toggle-theme") {
       state.theme = state.theme === "dark" ? "light" : "dark";

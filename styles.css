@@ -2916,3 +2916,71 @@ body.light .ring {
   word-break: break-word;
   -webkit-overflow-scrolling: touch;
 }
+
+/* v5.9.0 — fiche de lecture d'un indicateur */
+.metric-current {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  margin-bottom: 4px;
+}
+
+.metric-current strong {
+  display: block;
+  font-size: 1.9rem;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.metric-current span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.metric-scale {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.metric-zone {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-muted);
+  opacity: 0.55;
+}
+
+.metric-zone.active {
+  opacity: 1;
+  border-color: currentColor;
+}
+
+.metric-zone.good { color: var(--good, #C0F04A); }
+.metric-zone.watch { color: var(--watch, #F0B84A); }
+.metric-zone.bad { color: var(--bad, #F0684A); }
+
+.metric-zone-range {
+  flex: 0 0 auto;
+  min-width: 108px;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.metric-zone-label {
+  color: var(--muted);
+  font-size: 0.81rem;
+  line-height: 1.4;
+}
+
+.metric-zone.active .metric-zone-label {
+  color: var(--text, inherit);
+}
