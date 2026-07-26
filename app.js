@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.2.0";
+  const APP_VERSION = "7.3.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -188,6 +188,7 @@
     runDraft: null, // v7.0.0 : saisie de course par écart
     restTimer: null, // v7.0.0 : minuteur de repos { name, endsAt }
     notFullOpen: "", // v7.1.0 : jour dont la version allégée est dépliée
+    openMicro: "", // v7.3.0 : micro-session dont le détail est déplié
     expandedProgramDay: null,
     journal: {},
     program: {
@@ -3165,6 +3166,156 @@
     `;
   }
 
+  // ---- v7.3.0 : contenu détaillé des micro-sessions ----
+  // Retour de Ghislain : « sur la mobilité ce n'est pas précis, 10+10 par
+  // exemple, il faut être plus précis ». Exact — une consigne sans séries,
+  // sans côté et sans tempo n'est pas exécutable. Chaque item porte désormais
+  // sa prescription complète, et la micro-session s'ouvre en check-list.
+  const MICRO_CONTENT = {
+    mobility: [
+      {
+        name: "Cercles de chevilles",
+        rx: "10 cercles par sens, par cheville",
+        how: "Assis ou debout en appui, pied décollé. Dessine un cercle le plus large possible avec la pointe du pied, lentement. 10 dans un sens puis 10 dans l'autre, avant de changer de pied.",
+      },
+      {
+        name: "Flexion dorsale au mur",
+        rx: "10 par cheville · 2 s de tenue",
+        how: "Pied à une longueur de main du mur, genou poussé vers le mur en gardant le talon collé au sol. Tiens 2 s en fin d'amplitude puis reviens. Si le talon décolle, rapproche le pied du mur.",
+        why: "La cheville la plus limitante bride le squat et raccourcit la foulée. C'est l'exercice le plus utile de la routine pour toi.",
+      },
+      {
+        name: "90/90 hanches",
+        rx: "8 rotations par côté · 2 s de pause",
+        how: "Assis au sol, une jambe devant à 90°, l'autre sur le côté à 90°. Fais basculer les deux genoux d'un côté à l'autre sans décoller les fessiers, en marquant 2 s en fin d'amplitude.",
+      },
+      {
+        name: "Fente basse avec rotation thoracique",
+        rx: "5 par côté · 3 s bras vers le plafond",
+        how: "Grande fente avant, main opposée au sol à l'intérieur du pied avant. Ouvre le buste en montant l'autre bras vers le plafond, regard qui suit la main, tiens 3 s, reviens.",
+      },
+      {
+        name: "Cat-camel",
+        rx: "10 cycles · 2 s dos rond, 2 s dos creux",
+        how: "À quatre pattes. Enroule la colonne vertèbre par vertèbre en soufflant (2 s), puis creuse en inspirant (2 s). Un aller-retour = un cycle. Mouvement lent, jamais forcé.",
+      },
+      {
+        name: "Extension thoracique à genoux",
+        rx: "10 reps · 2 s de tenue",
+        how: "À genoux, coudes posés sur un banc ou une chaise, mains jointes derrière la nuque. Laisse la poitrine descendre entre les bras, tiens 2 s, remonte.",
+      },
+      {
+        name: "Balancés de jambes",
+        rx: "10 avant/arrière puis 10 latéraux, par jambe",
+        how: "En appui sur un mur, buste stable. Balance la jambe librement, amplitude croissante au fil des répétitions. Jamais de à-coup en fin de course.",
+      },
+    ],
+    stretch: [
+      { name: "Fléchisseurs de hanche", rx: "2 × 45 s par côté", how: "Fente genou au sol, bassin rétroversé (fessier serré) avant de pousser vers l'avant. C'est la rétroversion qui met en tension, pas l'amplitude de la fente." },
+      { name: "Ischio-jambiers", rx: "2 × 45 s par côté", how: "Talon sur un support bas, jambe tendue sans verrouiller, bascule le bassin vers l'avant en gardant le dos droit." },
+      { name: "Mollets genou tendu", rx: "2 × 45 s par côté", how: "Appui au mur, jambe arrière tendue, talon au sol. Cible le gastrocnémien. Progressif : c'est aussi de la rééducation." },
+      { name: "Mollets genou fléchi", rx: "2 × 45 s par côté", how: "Même position mais genou arrière légèrement plié : la tension descend sur le soléaire, le muscle clé du coureur." },
+      { name: "Fessiers / piriforme", rx: "2 × 45 s par côté", how: "Allongé sur le dos, cheville posée sur le genou opposé (figure 4), tire la cuisse support vers toi." },
+      { name: "Pectoraux", rx: "2 × 45 s par côté", how: "Avant-bras contre un montant de porte, coude à hauteur d'épaule, pivote le buste doucement à l'opposé." },
+    ],
+    stretchLong: [
+      { name: "Routine courte complète", rx: "les 6 positions ci-dessus · 2 × 45 s", how: "Fléchisseurs, ischio-jambiers, mollets tendu puis fléchi, fessiers, pectoraux." },
+      { name: "Adducteurs", rx: "2 × 45 s", how: "Assis, plantes de pieds jointes, genoux vers le sol, buste qui avance en gardant le dos droit." },
+      { name: "Dorsaux", rx: "2 × 45 s par côté", how: "Mains sur un support à hauteur de hanches, recule et laisse le buste descendre entre les bras, hanches en arrière." },
+      { name: "Quadriceps", rx: "2 × 45 s par côté", how: "Debout ou allongé sur le côté, talon vers la fesse, genoux alignés et bassin rétroversé." },
+      { name: "Respiration lente", rx: "2-3 min pour finir", how: "Allongé, inspire 4 s par le nez, expire 6 s par la bouche. Prépare le sommeil autant que la souplesse." },
+    ],
+  };
+
+  function microContent(id) {
+    return MICRO_CONTENT[id] || [];
+  }
+
+  // ---- Volume hebdomadaire par groupe musculaire ----
+  // Repère d'hypertrophie largement admis : 10 à 20 séries par groupe et par
+  // semaine. En dessous on entretient, au-dessus le rendement décroît et la
+  // récupération devient le facteur limitant — surtout en déficit calorique.
+  const MUSCLE_GROUPS = [
+    { id: "pecs", label: "Pectoraux", hints: ["developpe couche", "developpe incline", "pompes", "ecarte"] },
+    { id: "dos", label: "Dos", hints: ["traction", "rowing", "tirage", "elevations y"] },
+    { id: "epaules", label: "Épaules", hints: ["developpe militaire", "elevations laterales", "face pull"] },
+    { id: "bras", label: "Bras", hints: ["curl", "triceps", "biceps"] },
+    { id: "jambes", label: "Jambes", hints: ["squat", "presse", "fente", "leg curl", "souleve de terre", "hip thrust", "bulgare", "abduction"] },
+    { id: "mollets", label: "Mollets", hints: ["mollet"] },
+    { id: "tronc", label: "Tronc", hints: ["gainage", "pallof", "lombaire", "roulette"] },
+  ];
+
+  function muscleGroupFor(name) {
+    const n = normalizeLiftName(name);
+    const found = MUSCLE_GROUPS.find((group) => group.hints.some((hint) => n.includes(hint)));
+    return found ? found.id : null;
+  }
+
+  function weeklyVolume(daysBack = 7) {
+    const totals = {};
+    MUSCLE_GROUPS.forEach((group) => {
+      totals[group.id] = 0;
+    });
+    for (let i = 0; i < daysBack; i++) {
+      const entry = journalEntry(keyOffset(i));
+      (entry?.workouts || []).forEach((workout) => {
+        if (workout.type !== "muscu") return;
+        (workout.exercises || []).forEach((exercise) => {
+          const group = muscleGroupFor(exercise.name);
+          if (!group) return;
+          totals[group] += Number(exercise.sets) || 1;
+        });
+      });
+    }
+    return totals;
+  }
+
+  function volumeVerdict(sets) {
+    if (sets === 0) return { label: "Aucune série", tone: "info" };
+    if (sets < 10) return { label: "Entretien", tone: "watch" };
+    if (sets <= 20) return { label: "Zone de progression", tone: "good" };
+    return { label: "Au-delà du rendement utile", tone: "watch" };
+  }
+
+  function VolumeCard() {
+    const totals = weeklyVolume(7);
+    const any = Object.values(totals).some((v) => v > 0);
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Volume des 7 derniers jours</p>
+            <h2>Séries par groupe musculaire</h2>
+          </div>
+          ${StatusBadge(any ? `${Object.values(totals).reduce((a, b) => a + b, 0)} séries` : "En attente", any ? "info" : "watch")}
+        </div>
+        ${
+          any
+            ? `<div class="volume-list">
+                ${MUSCLE_GROUPS.map((group) => {
+                  const sets = totals[group.id];
+                  const verdict = volumeVerdict(sets);
+                  const pct = clamp((sets / 24) * 100, 0, 100);
+                  return `
+                    <div class="volume-row">
+                      <span class="volume-label">${escapeHtml(group.label)}</span>
+                      <span class="volume-bar"><span class="volume-fill ${verdict.tone}" style="--w:${pct}%"></span><span class="volume-zone"></span></span>
+                      <span class="volume-value">${sets}</span>
+                    </div>
+                  `;
+                }).join("")}
+              </div>
+              <p class="volume-legend">
+                <span><i style="background:var(--volt)"></i>10-20 séries : zone de progression</span>
+                <span><i style="background:var(--orange)"></i>hors zone</span>
+              </p>
+              <p class="small-text">Les pointillés marquent la fourchette 10-20 séries par semaine, le repère habituel pour progresser en hypertrophie. En dessous tu entretiens — c'est suffisant pour ne rien perdre, pas pour gagner. Au-dessus, le rendement décroît et c'est la récupération qui devient limitante, d'autant plus en déficit calorique.</p>`
+            : `<p class="small-text">Aucune série enregistrée sur les 7 derniers jours. Le compteur se remplit dès que tu enregistres tes séances : une semaine complète du Bloc 1 doit produire environ 12 à 16 séries sur les groupes principaux.</p>`
+        }
+      </section>
+    `;
+  }
+
   // ---- v6.0.0 : micro-sessions cochables avec créneaux ----
   // Retour de Ghislain (26/07) : « j'ai l'impression que je n'ai jamais d'étirement ».
   // Constat exact — elles n'étaient qu'une ligne de texte gris, sans horaire et
@@ -3245,15 +3396,44 @@
           ${items
             .map((item) => {
               const isDone = doneList.includes(item.id);
+              const content = microContent(item.id);
+              const open = state.openMicro === item.id;
               return `
-                <button type="button" class="micro-row ${isDone ? "done" : ""}" data-action="toggle-micro" data-micro="${escapeHtml(item.id)}" data-day="${escapeHtml(key)}">
-                  <span class="micro-check" aria-hidden="true">${isDone ? "✓" : ""}</span>
-                  <span class="micro-time">${escapeHtml(item.time)}</span>
-                  <span class="micro-body">
-                    <strong>${escapeHtml(item.label)} · ${item.minutes} min</strong>
-                    <span>${escapeHtml(item.hint)}</span>
-                  </span>
-                </button>
+                <div class="micro-item">
+                  <button type="button" class="micro-row ${isDone ? "done" : ""}" data-action="toggle-micro" data-micro="${escapeHtml(item.id)}" data-day="${escapeHtml(key)}">
+                    <span class="micro-check" aria-hidden="true">${isDone ? "✓" : ""}</span>
+                    <span class="micro-time">${escapeHtml(item.time)}</span>
+                    <span class="micro-body">
+                      <strong>${escapeHtml(item.label)} · ${item.minutes} min</strong>
+                      <span>${escapeHtml(item.hint)}</span>
+                    </span>
+                  </button>
+                  ${
+                    content.length
+                      ? `<button type="button" class="micro-detail-toggle" data-action="toggle-micro-detail" data-micro="${escapeHtml(item.id)}" aria-expanded="${open ? "true" : "false"}">
+                          ${open ? "Masquer le détail" : `Voir les ${content.length} exercices`}
+                        </button>`
+                      : ""
+                  }
+                  ${
+                    open && content.length
+                      ? `<ol class="micro-detail">
+                          ${content
+                            .map(
+                              (ex) => `
+                              <li>
+                                <strong>${escapeHtml(ex.name)}</strong>
+                                <span class="micro-rx">${escapeHtml(ex.rx)}</span>
+                                <span class="micro-how">${escapeHtml(ex.how)}</span>
+                                ${ex.why ? `<span class="micro-why">${escapeHtml(ex.why)}</span>` : ""}
+                              </li>
+                            `
+                            )
+                            .join("")}
+                        </ol>`
+                      : ""
+                  }
+                </div>
               `;
             })
             .join("")}
@@ -6830,6 +7010,7 @@
     if (!hasTrainingData() && hasReal) {
       return `
         <div class="page-grid">
+          ${VolumeCard()}
           ${realLifts.length ? RealLiftsSection(realLifts) : ""}
           ${realLifts.length ? RealStagnationSection(realLifts) : ""}
           ${running.total ? RealRunningSection(running) : ""}
@@ -6857,6 +7038,7 @@
     ];
     return `
       <div class="page-grid">
+        ${VolumeCard()}
         ${realLifts.length ? RealLiftsSection(realLifts) : ""}
         ${realLifts.length ? RealStagnationSection(realLifts) : ""}
         ${running.total ? RealRunningSection(running) : ""}
@@ -7720,6 +7902,9 @@
     if (action === "calf-hops") {
       day().calfTest.hopsOk = actionButton.dataset.value === "ok";
       day().calfTest.done = true;
+    }
+    if (action === "toggle-micro-detail") {
+      state.openMicro = state.openMicro === actionButton.dataset.micro ? "" : actionButton.dataset.micro;
     }
     if (action === "toggle-micro") {
       toggleMicro(actionButton.dataset.day || dateKey(), actionButton.dataset.micro);
