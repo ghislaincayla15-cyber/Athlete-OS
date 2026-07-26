@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "8.0.0";
+  const APP_VERSION = "8.1.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -52,68 +52,10 @@
     { id: "data", label: "Données" },
   ];
 
-  const demo = {
-    athlete: {
-      height: "1,71 m",
-      startWeight: 82,
-      level: "Intermédiaire",
-      priority: "Maintenir la masse musculaire et réduire progressivement la masse grasse",
-    },
-    recovery: {
-      sleepMinutes: 454,
-      sleepTrend: "+18 min vs moyenne 7 jours",
-      sleepScore: 82,
-      hrvLabel: "Stable",
-      hrvDelta: "+2 %",
-      hrvScore: 82,
-      rhr: 55,
-      rhrTrend: "-1 bpm vs habituel",
-      rhrScore: 84,
-      loadLabel: "Maîtrisée",
-      loadTrend: "Charge 7 jours coherente",
-      loadScore: 78,
-    },
-    workout: {
-      type: "Haut du corps force & hypertrophie",
-      objective: "Conserver l’intensité, progresser sans forcer l’échec",
-      duration: 70,
-      athleticQuality: "Force relative, gainage scapulaire, volume contrôlé",
-      rpe: 7.5,
-      volume: "18 series utiles",
-      intensity: "Moderee a elevee",
-      muscles: ["Pectoraux", "Dos", "Epaules", "Triceps"],
-      exercises: [
-        { name: "Développé couché", detail: "4 x 5 à 7 reps, RPE 7-8" },
-        { name: "Tractions pronation", detail: "4 x 6 a 8 reps" },
-        { name: "Rowing barre", detail: "3 x 8 a 10 reps" },
-        { name: "Développé militaire", detail: "3 x 6 à 8 reps" },
-        { name: "Face pull + gainage", detail: "3 blocs techniques" },
-      ],
-    },
-    block: {
-      goal: "Hypertrophie maîtrisée, maintien force, base cardio zone 2",
-      week: 4,
-      totalWeeks: 10,
-      completion: 38,
-      done: 17,
-      remaining: 28,
-      deloadWeek: 7,
-      weeklyGoal: "Stabiliser le RPE et ajouter une répétition sur les mouvements principaux",
-      adherenceWeek: 88,
-      adherenceBlock: 84,
-    },
-    performanceScore: 79,
-    healthIndex: 83,
-    body: {
-      weight: 82,
-      weightTrend: "Moyenne 7 jours stable",
-      waist: "Légère baisse",
-      vo2: 48,
-      sleepRegularity: 82,
-      activityRegularity: 87,
-      relativeStrength: "1,12 x poids de corps au developpe couche estime",
-    },
-  };
+  // v8.1.0 : la constante `demo` (données de démonstration, ~1991 caractères)
+  // a été supprimée. Elle n'était plus référencée depuis la purge des branches
+  // mortes derrière hasTrainingData().
+
 
   const dayDefaults = {
     weight: null,
@@ -825,7 +767,7 @@
         tone: "info",
       });
     }
-    if (!hasImportedHealth() && !hasTrainingData()) {
+    if (!hasImportedHealth()) {
       items.push({
         label: "Données Apple Santé",
         detail: "Sommeil, HRV, FC repos — import du fichier",
@@ -891,9 +833,6 @@
   }
 
   // Le mode démo a été retiré (v5.3) : l'app ne montre que des données réelles.
-  function hasTrainingData() {
-    return false;
-  }
 
   function hasImportedHealth() {
     return Boolean(state.imports?.health?.records);
@@ -1959,14 +1898,15 @@
   }
 
   function sleepAdjustedScore() {
-    if (!hasTrainingData() && !hasImportedHealth()) return null;
-    if (!hasTrainingData() && hasImportedHealth()) return scoreSleepMinutes(state.imports.health.sleepMinutes);
-    const subjective = mapValue({ mauvaise: -12, moyenne: -4, bonne: 0, excellente: 5 }, morning().sleepQuality, 0);
-    return clamp(demo.recovery.sleepScore + subjective, 0, 100);
+    if (!hasImportedHealth()) return null;
+    return scoreSleepMinutes(state.imports.health.sleepMinutes);
   }
 
+  // v8.1.0 : cette fonction retournait toujours false (hasTrainingData() est
+  // faux en dur depuis la v5.3). Elle ne servait qu'à relever la confiance du
+  // readiness, ce qui n'arrivait donc jamais. On lit maintenant la vraie source.
   function availableGarmin() {
-    return hasTrainingData() && ["connected", "partial", "old"].includes(state.sources.garmin);
+    return ["connected", "partial", "old"].includes(state.sources.garmin);
   }
 
   function scoreSleepMinutes(minutes) {
@@ -2037,9 +1977,9 @@
   }
 
   function calculateReadiness() {
-    const importedHealth = !hasTrainingData() ? state.imports.health : null;
+    const importedHealth = state.imports.health;
 
-    if (!hasTrainingData() && !hasImportedHealth() && !morning().completed) {
+    if (!hasImportedHealth() && !morning().completed) {
       return {
         score: 0,
         category: "À compléter",
@@ -2054,18 +1994,7 @@
     }
 
     const factorMap = {
-      hrv: hasTrainingData()
-        ? {
-            key: "hrv",
-            label: "HRV",
-            value: demo.recovery.hrvLabel,
-            score: demo.recovery.hrvScore,
-            trend: `${demo.recovery.hrvDelta} vs 28 jours`,
-            status: "Stable",
-            influence: "Soutient le maintien de la séance",
-            points: [76, 77, 81, 80, 83, 82, 84],
-          }
-        : importedHealth?.hrvMs
+      hrv: importedHealth?.hrvMs
           ? {
               key: "hrv",
               label: "HRV",
@@ -2077,18 +2006,7 @@
               points: [scoreHrv(importedHealth.hrvMs) - 3, scoreHrv(importedHealth.hrvMs) - 1, scoreHrv(importedHealth.hrvMs)],
             }
           : null,
-      sleep: hasTrainingData()
-        ? {
-            key: "sleep",
-            label: "Sommeil",
-            value: formatMinutes(demo.recovery.sleepMinutes),
-            score: sleepAdjustedScore(),
-            trend: demo.recovery.sleepTrend,
-            status: morning().sleepQuality === "mauvaise" ? "A surveiller" : "Suffisant",
-            influence: "Base correcte pour supporter l’intensité",
-            points: [68, 74, 70, 78, 80, 83, sleepAdjustedScore()],
-          }
-        : importedHealth?.sleepMinutes
+      sleep: importedHealth?.sleepMinutes
           ? (() => {
                 const avg = importedHealth.sleepAvg30 || importedHealth.sleepAvg7 || null;
                 const score = scoreSleepRelative(importedHealth.sleepMinutes, avg);
@@ -2109,18 +2027,7 @@
                 };
               })()
             : null,
-      rhr: hasTrainingData()
-        ? {
-            key: "rhr",
-            label: "FC repos",
-            value: `${demo.recovery.rhr} bpm`,
-            score: demo.recovery.rhrScore,
-            trend: demo.recovery.rhrTrend,
-            status: "Normale",
-            influence: "Pas de signal de stress inhabituel",
-            points: [78, 80, 82, 81, 83, 84, 84],
-          }
-        : importedHealth?.rhr
+      rhr: importedHealth?.rhr
           ? (() => {
                 const avg = importedHealth.rhrAvg30 || importedHealth.rhrAvg7 || null;
                 const score = scoreRestingHeartRate(importedHealth.rhr, avg);
@@ -2213,11 +2120,9 @@
     const session = programActive() ? programSessionFor() : null;
     const plannedTitle = session
       ? session.title
-      : hasTrainingData()
-        ? demo.workout.type
-        : programUpcoming()
-          ? `Bloc 1 — départ ${formatFrDate(programStartDate())}`
-          : "Aucune séance planifiée";
+      : programUpcoming()
+        ? `Bloc 1 — départ ${formatFrDate(programStartDate())}`
+        : "Aucune séance planifiée";
 
     if (isDeloadActive()) {
       return {
@@ -2251,7 +2156,7 @@
       };
     }
 
-    if (session && !hasTrainingData() && !morning().completed && !hasImportedHealth()) {
+    if (session && !morning().completed && !hasImportedHealth()) {
       return {
         label: "À compléter",
         tone: "watch",
@@ -2267,7 +2172,7 @@
       };
     }
 
-    if (!hasTrainingData() && !session) {
+    if (!session) {
       if (hasImportedHealth() && !morning().completed) {
         return {
           label: "Données importées",
@@ -4376,88 +4281,44 @@
       `;
     }
 
-    if (!hasTrainingData()) {
-      if (programUpcoming()) {
-        return `
-          <section class="workout-card">
-            <div class="workout-head">
-              <div>
-                <p class="eyebrow">Séance du jour</p>
-                <h2 class="workout-title">Bloc 1 programmé</h2>
-                <p class="workout-subtitle">${escapeHtml(BLOC1.goal)}</p>
-              </div>
-              ${StatusBadge(`J-${daysUntilBlockStart()}`, "info")}
-            </div>
-            <div class="empty-state">
-              <strong>Départ le ${escapeHtml(formatFrDate(programStartDate()))}</strong>
-              <p>4 séances de musculation (Upper/Lower), 2 courses zone 2 et 1 repos complet par semaine, deload en semaine ${BLOC1.deloadWeek}. D'ici là : check-ins quotidiens pour construire ta base de readiness, et repérage des charges si tu veux t'échauffer.</p>
-            </div>
-            <div class="button-row">
-              <button type="button" class="secondary-button" data-action="start-block-now">${icon("play")}Commencer dès cette semaine</button>
-            </div>
-          </section>
-        `;
-      }
+    if (programUpcoming()) {
       return `
         <section class="workout-card">
           <div class="workout-head">
             <div>
               <p class="eyebrow">Séance du jour</p>
-              <h2 class="workout-title">Aucune séance planifiée</h2>
-              <p class="workout-subtitle">Ton programme n’est pas encore renseigné.</p>
+              <h2 class="workout-title">Bloc 1 programmé</h2>
+              <p class="workout-subtitle">${escapeHtml(BLOC1.goal)}</p>
             </div>
-            ${StatusBadge("À créer", "watch")}
+            ${StatusBadge(`J-${daysUntilBlockStart()}`, "info")}
           </div>
           <div class="empty-state">
-            <strong>Repartir de zéro est actif</strong>
-            <p>Ajoute ton programme, importe Apple Santé ou charge la démo depuis les paramètres si tu veux revoir un exemple rempli.</p>
+            <strong>Départ le ${escapeHtml(formatFrDate(programStartDate()))}</strong>
+            <p>4 séances de musculation (Upper/Lower), 2 courses zone 2 et 1 repos complet par semaine, deload en semaine ${BLOC1.deloadWeek}. D'ici là : check-ins quotidiens pour construire ta base de readiness, et repérage des charges si tu veux t'échauffer.</p>
           </div>
           <div class="button-row">
-            <button type="button" class="primary-button" data-action="toggle-settings">${icon("settings")}Sources & paramètres</button>
+            <button type="button" class="secondary-button" data-action="start-block-now">${icon("play")}Commencer dès cette semaine</button>
           </div>
         </section>
       `;
     }
-
-    const workout = demo.workout;
     return `
       <section class="workout-card">
         <div class="workout-head">
           <div>
             <p class="eyebrow">Séance du jour</p>
-            <h2 class="workout-title">${escapeHtml(workout.type)}</h2>
-            <p class="workout-subtitle">${escapeHtml(workout.objective)}</p>
+            <h2 class="workout-title">Aucune séance planifiée</h2>
+            <p class="workout-subtitle">Ton programme n’est pas encore renseigné.</p>
           </div>
-          ${StatusBadge(day().workoutStarted ? "En cours" : "Prévue", day().workoutStarted ? "info" : decision.tone)}
+          ${StatusBadge("À créer", "watch")}
         </div>
-        <div class="stat-grid">
-          <div class="stat-tile"><span>Durée</span><strong>${workout.duration} min</strong></div>
-          <div class="stat-tile"><span>RPE cible</span><strong>${String(workout.rpe).replace(".", ",")}</strong></div>
-          <div class="stat-tile"><span>Volume</span><strong>${escapeHtml(workout.volume)}</strong></div>
-          <div class="stat-tile"><span>Qualite</span><strong>${escapeHtml(workout.athleticQuality)}</strong></div>
-        </div>
-        <div class="chip-row">${workout.muscles.map((item) => StatusBadge(item, "info")).join("")}</div>
-        <div class="exercise-list">
-          ${workout.exercises
-            .map((item) => `<div class="exercise-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.detail)}</span></div>`)
-            .join("")}
+        <div class="empty-state">
+          <strong>Repartir de zéro est actif</strong>
+          <p>Ajoute ton programme, importe Apple Santé ou charge la démo depuis les paramètres si tu veux revoir un exemple rempli.</p>
         </div>
         <div class="button-row">
-          <button type="button" class="primary-button" data-action="start-workout">${icon("play")}Démarrer la séance</button>
-          <button type="button" class="secondary-button" data-action="request-adaptation">${icon("tune")}Adapter la séance</button>
+          <button type="button" class="primary-button" data-action="toggle-settings">${icon("settings")}Sources & paramètres</button>
         </div>
-        ${
-          day().adaptationPending
-            ? `<div class="notice">
-                <strong>Confirmation requise</strong>
-                <p>Proposition : retirer une série d’assistance, ajouter 30 s de repos sur les mouvements lourds et garder 2 répétitions en réserve.</p>
-                <div class="button-row">
-                  <button type="button" class="primary-button" data-action="confirm-adaptation">${icon("check")}Confirmer</button>
-                  <button type="button" class="secondary-button" data-action="cancel-adaptation">Garder le plan</button>
-                </div>
-              </div>`
-            : ""
-        }
       </section>
     `;
   }
@@ -4623,9 +4484,7 @@
       {
         name: "Garmin",
         status: state.sources.garmin,
-        copy: hasTrainingData()
-          ? "Sommeil, HRV, FC repos, charge, running. Données locales de démonstration."
-          : state.imports.garmin
+        copy: state.imports.garmin
             ? `Activités importées : ${state.imports.garmin.count} sur ${state.imports.garmin.days} jour(s). Sommeil, HRV et FC repos ne figurent pas dans cet export — ils viennent d'Apple Santé.`
             : "Non connecté. Les données Garmin apparaîtront après import du fichier Activities.csv.",
       },
@@ -7088,7 +6947,13 @@
         <div class="card-head">
           <div>
             <p class="eyebrow">${
-              inAmorce(start) ? "Semaine d'amorce" : week ? `Semaine ${week} sur ${BLOC1.totalWeeks}` : "Avant le bloc"
+              // v8.1.0 : la semaine d'amorce commence un jeudi. Tester le seul
+              // lundi affichait « Avant le bloc » pendant toute l'amorce.
+              days.some((d) => inAmorce(d.key))
+                ? "Semaine d'amorce"
+                : week
+                  ? `Semaine ${week} sur ${BLOC1.totalWeeks}`
+                  : "Avant le bloc"
             }</p>
             <h2>${escapeHtml(fmt(start))} → ${escapeHtml(fmt(end))}</h2>
           </div>
@@ -7342,79 +7207,16 @@
   }
 
   function renderProgram() {
-    if (programStartDate() && !hasTrainingData()) {
+    if (programStartDate()) {
       return renderRealProgram();
     }
 
-    if (!hasTrainingData()) {
-      return BlankDataPage({
-        eyebrow: "Bloc d’entraînement",
-        title: "Aucun programme chargé",
-        copy: "Le calendrier, le deload et l’adhérence apparaîtront quand ton bloc sera créé ou importé.",
-        next: "Créer ton bloc de 8 à 12 semaines",
-      });
-    }
-
-    return `
-      <div class="page-grid">
-        <div class="section-grid">
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">Vue générale</p>
-                <h2>Semaine ${demo.block.week} sur ${demo.block.totalWeeks}</h2>
-              </div>
-              ${StatusBadge(`${demo.block.completion} % complete`, "info")}
-            </div>
-            <p class="small-text">${escapeHtml(demo.block.goal)}</p>
-            <div class="stat-grid">
-              <div class="stat-tile"><span>Séances réalisées</span><strong>${demo.block.done}</strong></div>
-              <div class="stat-tile"><span>Restantes</span><strong>${demo.block.remaining}</strong></div>
-              <div class="stat-tile"><span>Deload</span><strong>Semaine ${demo.block.deloadWeek}</strong></div>
-              <div class="stat-tile"><span>Objectif semaine</span><strong>${escapeHtml(demo.block.weeklyGoal)}</strong></div>
-            </div>
-            <div class="progress-line">
-              <div class="progress-track"><div class="progress-fill" style="--progress:${demo.block.completion}%"></div></div>
-            </div>
-          </section>
-          ${ProgressRing({
-            value: demo.block.completion,
-            label: `Semaine ${demo.block.week} sur ${demo.block.totalWeeks}`,
-            sublabel: "Completion du bloc fixe",
-            accent: "var(--indigo)",
-          })}
-        </div>
-        <div class="section-grid">
-          ${WeeklyCalendar()}
-          ${AdherenceCard()}
-        </div>
-        <section class="card">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow">Historique des adaptations</p>
-              <h2>Justifications et résultats observés</h2>
-            </div>
-            ${StatusBadge("Traçabilite", "info")}
-          </div>
-          <div class="adaptation-list">
-            ${[
-              ["8 juillet", "Fractionne remplace par zone 2", "Sommeil court + RPE anormalement haut", "Fatigue reduite le lendemain"],
-              ["5 juillet", "Développé couché maintenu sans ajout de charge", "Trois séries à RPE 8,5 sur la séance précédente", "Technique plus stable"],
-              ["1 juillet", "Volume dos reduit de 2 series", "Tension coude signalee au check-in", "Douleur disparue sous 48 h"],
-            ]
-              .map(
-                ([date, mod, reason, result]) => `
-                  <article class="timeline-item">
-                    <strong>${escapeHtml(date)} - ${escapeHtml(mod)}</strong>
-                    <p>Raison : ${escapeHtml(reason)}. Résultat observé : ${escapeHtml(result)}.</p>
-                  </article>
-                `
-              )
-              .join("")}
-          </div>
-        </section>
-      </div>
-    `;
+    return BlankDataPage({
+      eyebrow: "Bloc d’entraînement",
+      title: "Aucun programme chargé",
+      copy: "Le calendrier, le deload et l’adhérence apparaîtront quand ton bloc sera créé ou importé.",
+      next: "Créer ton bloc de 8 à 12 semaines",
+    });
   }
 
   function formatE1rm(value) {
@@ -7520,7 +7322,7 @@
     const running = runningSummary();
     const hasReal = realLifts.length > 0 || running.total > 0;
 
-    if (!hasTrainingData() && !hasReal) {
+    if (!hasReal) {
       return BlankDataPage({
         eyebrow: "Performances",
         title: "Aucune performance enregistrée",
@@ -7529,7 +7331,6 @@
       });
     }
 
-    if (!hasTrainingData() && hasReal) {
       return `
         <div class="page-grid">
           ${VolumeCard()}
@@ -7548,109 +7349,11 @@
           </section>
         </div>
       `;
-    }
 
-    const lifts = [
-      ["Développé couché", "82,5 kg x 6", "85 kg x 5", "+3 %", [70, 72, 74, 76, 77, 79, 82]],
-      ["Squat", "105 kg x 5", "110 kg x 4", "+2 %", [68, 70, 70, 73, 75, 76, 77]],
-      ["Souleve de terre", "130 kg x 4", "135 kg x 3", "Stable", [72, 74, 75, 74, 75, 75, 75]],
-      ["Tractions", "+12 kg x 6", "+15 kg x 5", "+4 %", [66, 67, 71, 73, 75, 78, 80]],
-      ["Rowing", "72,5 kg x 8", "75 kg x 7", "+2 %", [64, 67, 68, 70, 71, 72, 74]],
-      ["Développé militaire", "52,5 kg x 5", "55 kg x 4", "À surveiller", [70, 70, 71, 71, 70, 70, 70]],
-    ];
-    return `
-      <div class="page-grid">
-        ${VolumeCard()}
-        ${realLifts.length ? RealLiftsSection(realLifts) : ""}
-        ${realLifts.length ? RealStagnationSection(realLifts) : ""}
-        ${running.total ? RealRunningSection(running) : ""}
-        <div class="section-grid">
-          ${ScoreDonut({
-            score: demo.performanceScore,
-            label: "Score de performance du bloc",
-            trend: "+5 pts sur 4 semaines",
-            confidence: "Moyen",
-            accent: "var(--indigo)",
-          })}
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">Ponderation</p>
-                <h2>Score calculé sur plusieurs semaines</h2>
-              </div>
-              ${StatusBadge("Jamais sur 1 séance", "watch")}
-            </div>
-            <div class="pillars">
-              ${[
-                ["Musculation", "35 %", "Progression solide sur developpe couche, tractions et rowing."],
-                ["Cardio & running", "30 %", "Volume stable, zone 2 en hausse, fractionne a consolider."],
-                ["Régularité", "20 %", "Adhérence hebdomadaire à 88 %."],
-                ["Exécution & RPE", "15 %", "RPE mieux maîtrisé, peu de séries à l’échec."],
-              ]
-                .map(([name, weight, copy]) => `<div class="pillar-row"><strong>${name} - ${weight}</strong><p>${copy}</p></div>`)
-                .join("")}
-            </div>
-          </section>
-        </div>
-        <section class="card">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow">Musculation</p>
-              <h2>Exercices majeurs</h2>
-            </div>
-            ${StatusBadge("Progression reelle", "good")}
-          </div>
-          <div class="performance-table">
-            ${lifts
-              .map(
-                ([name, last, best, trend, points]) => `
-                  <article class="lift-row">
-                    <div><strong>${name}</strong><span>Derniere : ${last} · Meilleure : ${best}</span></div>
-                    ${StatusBadge(trend, trend === "À surveiller" ? "watch" : trend === "Stable" ? "info" : "good")}
-                    ${TrendChart(points, trend === "À surveiller" ? "var(--orange)" : "var(--green)")}
-                  </article>
-                `
-              )
-              .join("")}
-          </div>
-        </section>
-        <div class="section-grid">
-          <section class="card">
-            <div class="card-head">
-              <div>
-              <p class="eyebrow">Détection des stagnations</p>
-              <h2>Développé militaire à surveiller</h2>
-              </div>
-              ${StatusBadge("3 séances stables", "watch")}
-            </div>
-            <p class="small-text">Pas d’augmentation brutale du volume. Le coach propose plutôt une plage 6-10 reps, tempo contrôlé et maintien RPE 7 pendant deux semaines.</p>
-            <div class="notice"><strong>Action proposée</strong><p>Changer temporairement la variante pour développé haltères assis si la technique se dégrade ou si la fatigue épaule augmente.</p></div>
-          </section>
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">Running & cardio</p>
-                <h2>Volume, intensité, récupération</h2>
-              </div>
-              ${StatusBadge("Tendance 8 semaines +", "good")}
-            </div>
-            <div class="stat-grid">
-              <div class="stat-tile"><span>Km semaine</span><strong>18,4</strong></div>
-              <div class="stat-tile"><span>Séances</span><strong>2</strong></div>
-              <div class="stat-tile"><span>Allure moyenne</span><strong>5'42/km</strong></div>
-              <div class="stat-tile"><span>Zone 2</span><strong>72 min</strong></div>
-              <div class="stat-tile"><span>FC moyenne</span><strong>142 bpm</strong></div>
-              <div class="stat-tile"><span>VO2 estimee</span><strong>${demo.body.vo2}</strong></div>
-            </div>
-            ${TrendChart([42, 44, 43, 46, 48, 49, 52, 55, 57, 58, 60, 62], "var(--blue)")}
-          </section>
-        </div>
-      </div>
-    `;
   }
 
   function renderHealth() {
-    if (!hasTrainingData() && hasImportedHealth()) {
+    if (hasImportedHealth()) {
       const health = state.imports.health;
       return `
         <div class="page-grid">
@@ -7701,124 +7404,12 @@
       `;
     }
 
-    if (!hasTrainingData()) {
-      return BlankDataPage({
-        eyebrow: "Santé & forme",
-        title: "Aucune tendance long terme",
-        copy: "Poids, tour de taille, HRV, sommeil, FC repos et VO2 estimée resteront vides tant que tes données Apple Santé/Garmin ne sont pas importées.",
-        next: "Importer Apple Santé",
-      });
-    }
-
-    return `
-      <div class="page-grid">
-        <div class="section-grid">
-          ${ScoreDonut({
-            score: demo.healthIndex,
-            label: "Health & Athletic Index",
-            trend: "+4 pts sur 3 mois",
-            confidence: "Moyen",
-            accent: "var(--green)",
-          })}
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">Indice de forme générale</p>
-                <h2>Construit sur les tendances longues</h2>
-              </div>
-              ${StatusBadge("Stable", "good")}
-            </div>
-            <div class="pillars">
-              ${[
-                ["Cardio", "30 %", "VO2 estimée et zone 2 en progression."],
-                ["FC repos & HRV", "20 %", "FC repos stable, HRV sans degradation durable."],
-                ["Poids & taille", "20 %", "Poids stable avec tour de taille legerement en baisse."],
-                ["Activité", "15 %", "Régularité hebdomadaire élevée."],
-                ["Sommeil", "15 %", "Durée correcte, régularité encore améliorable."],
-              ]
-                .map(([name, weight, copy]) => `<div class="pillar-row"><strong>${name} - ${weight}</strong><p>${copy}</p></div>`)
-                .join("")}
-            </div>
-          </section>
-        </div>
-        <section class="card">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow">Indicateurs principaux</p>
-              <h2>Moyen et long terme</h2>
-            </div>
-            ${StatusBadge("Tendances personnelles", "info")}
-          </div>
-          <div class="stat-grid wide">
-            <div class="stat-tile"><span>Poids</span><strong>${(() => {
-              const weight = weightSummary();
-              return weight.last !== null ? formatKg(weight.last) : `${demo.body.weight} kg`;
-            })()}</strong></div>
-            <div class="stat-tile"><span>Moyenne 7 j</span><strong>${(() => {
-              const weight = weightSummary();
-              if (weight.avg7 === null) return demo.body.weightTrend;
-              const delta = weight.delta;
-              return `${formatKg(weight.avg7)}${delta !== null ? ` (${delta > 0 ? "+" : ""}${String(delta).replace(".", ",")})` : ""}`;
-            })()}</strong></div>
-            <div class="stat-tile"><span>Tour de taille</span><strong>${demo.body.waist}</strong></div>
-            <div class="stat-tile"><span>FC repos</span><strong>${demo.recovery.rhr} bpm</strong></div>
-            <div class="stat-tile"><span>HRV</span><strong>${demo.recovery.hrvLabel}</strong></div>
-            <div class="stat-tile"><span>VO2 estimee</span><strong>${demo.body.vo2}</strong></div>
-            <div class="stat-tile"><span>Sommeil</span><strong>${demo.body.sleepRegularity} % regulier</strong></div>
-            <div class="stat-tile"><span>Activité</span><strong>${demo.body.activityRegularity} %</strong></div>
-            <div class="stat-tile"><span>Force relative</span><strong>${demo.body.relativeStrength}</strong></div>
-          </div>
-        </section>
-        <div class="section-grid">
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">Progression physique</p>
-                <h2>Tendance probable</h2>
-              </div>
-              ${StatusBadge("Favorable", "good")}
-            </div>
-            <p class="small-text">Poids stable, tour de taille legerement en baisse et performances maintenues : tendance compatible avec une recomposition favorable. Ce n'est pas un diagnostic certain.</p>
-            ${(() => {
-              const weights = weightSeries(28);
-              return weights.length >= 3
-                ? TrendChart(weights, "var(--green)")
-                : TrendChart([82.4, 82.2, 82.1, 82.0, 82.1, 82.0, 81.9], "var(--green)");
-            })()}
-          </section>
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">Age athletique indicatif</p>
-                <h2>Non affiché pour l’instant</h2>
-              </div>
-              ${StatusBadge("Confiance insuffisante", "watch")}
-            </div>
-            <div class="empty-state">
-              <strong>Historique encore trop court</strong>
-              <p>Il faut au moins huit semaines exploitables avec données cardio, poids, tour de taille, activité et performances. Cette valeur ne représentera jamais un âge biologique réel.</p>
-            </div>
-          </section>
-        </div>
-        <section class="card">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow">Estimations et tendances</p>
-              <h2>Données secondaires</h2>
-            </div>
-            ${StatusBadge("Jamais seules", "watch")}
-          </div>
-          <p class="small-text"><strong>Ces données sont des estimations secondaires et ne sont jamais utilisées seules pour prendre une décision.</strong></p>
-          <div class="stat-grid">
-            <div class="stat-tile"><span>Masse grasse estimee</span><strong>~18 %</strong></div>
-            <div class="stat-tile"><span>Masse musculaire estimee</span><strong>Stable</strong></div>
-            <div class="stat-tile"><span>Calories brulees</span><strong>Tendance uniquement</strong></div>
-            <div class="stat-tile"><span>Body Battery</span><strong>Secondaire</strong></div>
-            <div class="stat-tile"><span>Stress Garmin</span><strong>Contextuel</strong></div>
-          </div>
-        </section>
-      </div>
-    `;
+    return BlankDataPage({
+      eyebrow: "Santé & forme",
+      title: "Aucune tendance long terme",
+      copy: "Poids, tour de taille, HRV, sommeil, FC repos et VO2 estimée resteront vides tant que tes données Apple Santé/Garmin ne sont pas importées.",
+      next: "Importer Apple Santé",
+    });
   }
 
   // ---- Briefing texte : ce que l'athlète transmet au coach (Claude) ----
