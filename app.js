@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "5.9.0";
+  const APP_VERSION = "6.0.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -127,6 +127,7 @@
     workoutStarted: false,
     workoutStartedAt: null, // horodatage de début (séance en cours)
     exercisesDone: [], // noms des exercices cochés pendant la séance
+    microDone: [], // v6.0.0 : identifiants des micro-sessions faites (mobilité, étirements)
     adaptationPending: false,
     adaptationConfirmed: false,
     morning: {
@@ -245,6 +246,7 @@
       workouts: Array.isArray(entry.workouts) ? entry.workouts : [],
       activities: Array.isArray(entry.activities) ? entry.activities : [],
       exercisesDone: Array.isArray(entry.exercisesDone) ? entry.exercisesDone : [],
+      microDone: Array.isArray(entry.microDone) ? entry.microDone : [],
       morning: { ...base.morning, ...(entry.morning || {}) },
       evening: { ...base.evening, ...(entry.evening || {}) },
       nutrition: { ...base.nutrition, ...(entry.nutrition || {}) },
@@ -2508,6 +2510,111 @@
     return clamp(((value - min) / (max - min)) * 100, 0, 100);
   }
 
+  // ---- v6.0.0 : micro-sessions cochables avec créneaux ----
+  // Retour de Ghislain (26/07) : « j'ai l'impression que je n'ai jamais d'étirement ».
+  // Constat exact — elles n'étaient qu'une ligne de texte gris, sans horaire et
+  // surtout sans moyen de les cocher : rien n'était tracé, donc rien ne remontait.
+  // Créneaux calés sur son rythme réel (lever 8 h, coucher 22 h, séance le matin
+  // ou entre 12 h et 14 h) : mobilité au lever, étirements 1 h avant le coucher —
+  // toujours à distance de la séance, l'étirement statique long dégradant la
+  // performance s'il la précède (consensus Delphi 2025).
+  const MICRO_LIBRARY = {
+    mobility: {
+      id: "mobility",
+      label: "Mobilité",
+      time: "08:15",
+      minutes: 10,
+      hint: "Au lever, avant le petit-déjeuner. Dynamique, jamais d'étirement statique long avant une séance.",
+    },
+    stretch: {
+      id: "stretch",
+      label: "Étirements",
+      time: "21:00",
+      minutes: 15,
+      hint: "1 h avant le coucher, loin de la séance. 2 × 45 s par position, tension confortable.",
+    },
+    stretchLong: {
+      id: "stretchLong",
+      label: "Étirements longs",
+      time: "20:45",
+      minutes: 25,
+      hint: "Routine complète du dimanche + 2-3 min de respiration lente pour finir.",
+    },
+  };
+
+  const MICRO_BY_DAY = {
+    1: ["mobility", "stretch"],
+    2: ["mobility"],
+    3: ["mobility", "stretch"],
+    4: ["mobility"],
+    5: ["mobility"],
+    6: ["mobility", "stretch"],
+    0: ["mobility", "stretchLong"],
+  };
+
+  function microFor(key = dateKey()) {
+    return (MICRO_BY_DAY[actualWeekday(key)] || []).map((id) => MICRO_LIBRARY[id]).filter(Boolean);
+  }
+
+  function microDone(key = dateKey()) {
+    const entry = journalEntry(key);
+    return Array.isArray(entry?.microDone) ? entry.microDone : [];
+  }
+
+  function microStats(key = dateKey()) {
+    const items = microFor(key);
+    const done = microDone(key);
+    return { total: items.length, done: items.filter((item) => done.includes(item.id)).length, items };
+  }
+
+  function toggleMicro(key, id) {
+    const entry = day(key);
+    const list = Array.isArray(entry.microDone) ? entry.microDone : [];
+    entry.microDone = list.includes(id) ? list.filter((value) => value !== id) : [...list, id];
+  }
+
+  function MicroCard(key = dateKey()) {
+    const { items, done, total } = microStats(key);
+    if (!items.length) return "";
+    const doneList = microDone(key);
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Micro-sessions</p>
+            <h2>Mobilité & étirements</h2>
+          </div>
+          ${done === total ? StatusBadge("Fait", "good") : StatusBadge(`${done}/${total}`, done ? "watch" : "info")}
+        </div>
+        <div class="micro-list">
+          ${items
+            .map((item) => {
+              const isDone = doneList.includes(item.id);
+              return `
+                <button type="button" class="micro-row ${isDone ? "done" : ""}" data-action="toggle-micro" data-micro="${escapeHtml(item.id)}" data-day="${escapeHtml(key)}">
+                  <span class="micro-check" aria-hidden="true">${isDone ? "✓" : ""}</span>
+                  <span class="micro-time">${escapeHtml(item.time)}</span>
+                  <span class="micro-body">
+                    <strong>${escapeHtml(item.label)} · ${item.minutes} min</strong>
+                    <span>${escapeHtml(item.hint)}</span>
+                  </span>
+                </button>
+              `;
+            })
+            .join("")}
+        </div>
+        <p class="small-text">Ces créneaux tiennent compte de ton rythme (lever 8 h, coucher 22 h). Ce sont des repères, pas des contraintes : l'important est de les faire, pas de les faire à l'heure exacte.</p>
+      </section>
+    `;
+  }
+
+  function microSummaryLine(key) {
+    const items = microFor(key);
+    if (!items.length) return "";
+    const doneList = microDone(key);
+    return items.map((item) => `${doneList.includes(item.id) ? "✓" : "○"} ${item.time} ${item.label} ${item.minutes} min`).join(" · ");
+  }
+
   // ---- v5.9.0 : fiches de lecture des indicateurs ----
   // Un chiffre nu ne veut rien dire. Chaque tuile ouvre une fiche qui donne
   // l'échelle de référence, où l'athlète se situe, et la cible liée à SES objectifs.
@@ -3097,7 +3204,7 @@
                 }</p>`
               : ""
           }
-          ${session.micro ? `<p class="small-text">Micro-sessions du jour · ${escapeHtml(session.micro)}</p>` : ""}
+          <p class="small-text">Mobilité et étirements du jour : voir la carte « Micro-sessions » juste en dessous.</p>
           ${
             session.kind === "muscu"
               ? `<div class="notice"><strong>Comment mener la séance</strong><p>Échauffement 8-10 min (mobilité + 2 séries légères du premier exercice), puis les exercices dans l'ordre affiché. Respecte les temps de repos : ils font partie de la charge. Le RPE est ton garde-fou — RPE 7 = il te reste 3 répétitions en réserve, RPE 8 = 2. Tu ne vas jamais à l'échec sur ce bloc. Douleur mollet > 3/10 → tu arrêtes l'exercice et tu le signales au bilan du soir.</p></div>`
@@ -5352,6 +5459,7 @@
           <div class="page-grid">
             ${RingsRow(readiness)}
             ${QuickSessionCard()}
+            ${MicroCard()}
             ${WeatherCard()}
             ${MissingCard()}
             ${GaugeGrid()}
@@ -5374,6 +5482,7 @@
       workout: `
         <div class="page-grid">
           ${QuickSessionCard()}
+          ${MicroCard()}
           ${WeatherCard()}
           <div class="section-grid">
             ${WorkoutCard(decision)}
@@ -5606,9 +5715,9 @@
                         ${session.exercises.map((item) => ExerciseRow(item, "calendrier")).join("")}
                       </div>
                       <p class="small-text">Progression : quand tu atteins le haut de la fourchette de reps sur toutes les séries au RPE cible → +2,5 kg (haut du corps) ou +5 kg (bas du corps) la séance suivante.</p>
-                      ${session.micro ? `<p class="small-text">Micro-sessions · ${escapeHtml(session.micro)}</p>` : ""}`
+                      ${microSummaryLine(key) ? `<p class="small-text">Micro-sessions · ${escapeHtml(microSummaryLine(key))}</p>` : ""}`
                     : `<p class="small-text">Repos complet : marche libre si tu veux, rien d'imposé. La progression se construit pendant la récupération.</p>
-                      ${session.micro ? `<p class="small-text">Micro-sessions · ${escapeHtml(session.micro)}</p>` : ""}`
+                      ${microSummaryLine(key) ? `<p class="small-text">Micro-sessions · ${escapeHtml(microSummaryLine(key))}</p>` : ""}`
                 }
               </div>`
             : ""
@@ -6264,6 +6373,7 @@
         entry.nutrition?.touched ||
         (entry.workouts || []).length ||
         (entry.activities || []).length ||
+        (entry.microDone || []).length ||
         Number(entry.weight) > 0 ||
         Number(entry.waist) > 0
       );
@@ -6373,6 +6483,11 @@
         if (entry.evening.reason) lines.push(`  Raison notée : ${entry.evening.reason}`);
         if (entry.evening.comment) lines.push(`  Commentaire : ${entry.evening.comment}`);
       }
+      const micro = microStats(key);
+      if (micro.total) {
+        const faits = micro.items.filter((item) => (entry.microDone || []).includes(item.id)).map((item) => item.label);
+        lines.push(`Micro-sessions : ${micro.done}/${micro.total}${faits.length ? ` (${faits.join(", ")})` : " — aucune cochée"}`);
+      }
       if (entry.nutrition?.touched) {
         lines.push(
           `Nutrition : ${entry.nutrition.meals || "?"} repas dont ${entry.nutrition.proteinMeals || "?"} protéinés · végétaux ${entry.nutrition.plants} · qualité ${entry.nutrition.diet} · faim ${entry.nutrition.hunger} · digestion ${entry.nutrition.digestion} · alcool ${entry.nutrition.alcohol}${entry.nutrition.foods ? ` · ${entry.nutrition.foods}` : ""}`
@@ -6396,6 +6511,8 @@
     if (withoutRpe.length) missing.push(`RPE manquant sur ${withoutRpe.length} séance(s) muscu`);
     const withoutEvening = keys.filter((key) => !state.journal[key].evening?.touched);
     if (withoutEvening.length) missing.push(`bilan du soir absent sur ${withoutEvening.length} jour(s)`);
+    const microSkipped = keys.filter((key) => microStats(key).total && !microStats(key).done);
+    if (microSkipped.length) missing.push(`aucune micro-session cochée sur ${microSkipped.length} jour(s)`);
     if (missing.length) {
       lines.push("");
       lines.push("## Données manquantes à signaler au coach");
@@ -6731,6 +6848,9 @@
     if (action === "close-exercise") {
       state.openExercise = null;
       state.openExerciseDetail = "";
+    }
+    if (action === "toggle-micro") {
+      toggleMicro(actionButton.dataset.day || dateKey(), actionButton.dataset.micro);
     }
     if (action === "open-metric") {
       state.openMetric = actionButton.dataset.metric;
