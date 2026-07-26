@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "7.7.0";
+  const APP_VERSION = "7.8.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -1970,12 +1970,47 @@
     return 36;
   }
 
-  function scoreRestingHeartRate(value) {
+  // v7.8.0 : la FC de repos se lit contre TA moyenne quand elle existe. Les
+  // seuils de population ne servent plus que de repli les premiers jours.
+  function scoreRestingHeartRate(value, avg = null) {
     if (!value) return null;
+    if (Number.isFinite(avg) && avg > 0) {
+      const delta = value - avg;
+      if (delta <= -2) return 92;
+      if (delta <= 1) return 84;
+      if (delta <= 3) return 70;
+      if (delta <= 5) return 56;
+      return 40;
+    }
     if (value <= 56) return 86;
     if (value <= 62) return 78;
     if (value <= 70) return 64;
     return 48;
+  }
+
+  // Idem pour le sommeil : dormir 7 h quand on dort 7 h 50 en moyenne est une
+  // dette, même si 7 h reste « correct » dans l'absolu.
+  function scoreSleepRelative(minutes, avg = null) {
+    if (!minutes) return null;
+    const absolute = scoreSleepMinutes(minutes);
+    if (!Number.isFinite(avg) || avg <= 0) return absolute;
+    const delta = minutes - avg;
+    let relative;
+    if (delta >= 15) relative = 92;
+    else if (delta >= -20) relative = 84;
+    else if (delta >= -50) relative = 70;
+    else if (delta >= -80) relative = 56;
+    else relative = 40;
+    // On garde la moitié du repère absolu : une nuit de 5 h reste mauvaise même
+    // pour quelqu'un qui dort peu d'habitude.
+    return rounded(relative * 0.65 + absolute * 0.35);
+  }
+
+  function rhrDeltaText(value, avg) {
+    if (!Number.isFinite(avg) || avg <= 0 || !value) return null;
+    const delta = Math.round((value - avg) * 10) / 10;
+    const sign = delta > 0 ? "+" : "";
+    return `${sign}${String(delta).replace(".", ",")} bpm vs ta moyenne 30 j (${String(avg).replace(".", ",")})`;
   }
 
   function scoreHrv(value) {
@@ -2046,17 +2081,26 @@
             points: [68, 74, 70, 78, 80, 83, sleepAdjustedScore()],
           }
         : importedHealth?.sleepMinutes
-          ? {
-              key: "sleep",
-              label: "Sommeil",
-              value: formatMinutes(rounded(importedHealth.sleepMinutes)),
-              score: scoreSleepMinutes(importedHealth.sleepMinutes),
-              trend: `Dernière nuit importée ${formatShortDate(importedHealth.latestDates?.sleep)}`,
-              status: scoreSleepMinutes(importedHealth.sleepMinutes) >= 72 ? "Suffisant" : "A surveiller",
-              influence: "Influence la recommandation du jour",
-              points: [scoreSleepMinutes(importedHealth.sleepMinutes) - 4, scoreSleepMinutes(importedHealth.sleepMinutes) - 2, scoreSleepMinutes(importedHealth.sleepMinutes)],
-            }
-          : null,
+          ? (() => {
+                const avg = importedHealth.sleepAvg30 || importedHealth.sleepAvg7 || null;
+                const score = scoreSleepRelative(importedHealth.sleepMinutes, avg);
+                const delta = avg ? Math.round(importedHealth.sleepMinutes - avg) : null;
+                return {
+                  key: "sleep",
+                  label: "Sommeil",
+                  value: formatMinutes(rounded(importedHealth.sleepMinutes)),
+                  score,
+                  trend: avg
+                    ? `${delta > 0 ? "+" : ""}${delta} min vs ta moyenne 30 j (${formatMinutes(Math.round(avg))})`
+                    : `Dernière nuit importée ${formatShortDate(importedHealth.latestDates?.sleep)}`,
+                  status: score >= 72 ? "Suffisant" : "A surveiller",
+                  influence: avg
+                    ? "Noté contre ta propre moyenne : c'est l'écart qui porte le signal, pas la valeur absolue."
+                    : "Influence la recommandation du jour",
+                  points: [score - 4, score - 2, score],
+                };
+              })()
+            : null,
       rhr: hasTrainingData()
         ? {
             key: "rhr",
@@ -2069,17 +2113,24 @@
             points: [78, 80, 82, 81, 83, 84, 84],
           }
         : importedHealth?.rhr
-          ? {
-              key: "rhr",
-              label: "FC repos",
-              value: `${rounded(importedHealth.rhr)} bpm`,
-              score: scoreRestingHeartRate(importedHealth.rhr),
-              trend: `Dernière mesure importée ${formatShortDate(importedHealth.latestDates?.rhr)}`,
-              status: scoreRestingHeartRate(importedHealth.rhr) >= 72 ? "Normale" : "A surveiller",
-              influence: "Signal de charge interne à interpréter avec ton historique",
-              points: [scoreRestingHeartRate(importedHealth.rhr) - 2, scoreRestingHeartRate(importedHealth.rhr), scoreRestingHeartRate(importedHealth.rhr)],
-            }
-          : null,
+          ? (() => {
+                const avg = importedHealth.rhrAvg30 || importedHealth.rhrAvg7 || null;
+                const score = scoreRestingHeartRate(importedHealth.rhr, avg);
+                const deltaText = rhrDeltaText(importedHealth.rhr, avg);
+                return {
+                  key: "rhr",
+                  label: "FC repos",
+                  value: `${rounded(importedHealth.rhr)} bpm`,
+                  score,
+                  trend: deltaText || `Dernière mesure importée ${formatShortDate(importedHealth.latestDates?.rhr)}`,
+                  status: score >= 72 ? "Normale" : "A surveiller",
+                  influence: avg
+                    ? "Notée contre ta propre moyenne : au-delà de +3 bpm plusieurs jours d'affilée, c'est un signal de fatigue."
+                    : "Signal de charge interne à interpréter avec ton historique",
+                  points: [score - 2, score, score],
+                };
+              })()
+            : null,
       load: (() => {
         // v7.1.0 : ratio charge aiguë (7 j) / charge chronique (28 j).
         const load = acwr();
@@ -7744,6 +7795,8 @@
         (entry.workouts || []).length ||
         (entry.activities || []).length ||
         (entry.microDone || []).length ||
+        entry.plyo?.done ||
+        entry.calfTest?.done ||
         Number(entry.weight) > 0 ||
         Number(entry.waist) > 0
       );
@@ -7815,10 +7868,28 @@
     if (latestWeight) lines.push(`- Poids : ${latestWeight.value} kg (le ${formatFrDate(latestWeight.key)})`);
     if (latestWaist) lines.push(`- Tour de taille : ${latestWaist.value} cm (le ${formatFrDate(latestWaist.key)})`);
     if (health) {
-      if (health.rhr) lines.push(`- FC repos : ${health.rhr} bpm`);
+      if (health.rhr) {
+        const avg = health.rhrAvg30 || health.rhrAvg7 || null;
+        const deltaText = rhrDeltaText(health.rhr, avg);
+        lines.push(
+          `- FC repos : ${health.rhr} bpm${deltaText ? ` — ${deltaText}` : ""}${
+            health.rhrAvg7 ? ` · moyenne 7 j ${String(health.rhrAvg7).replace(".", ",")}` : ""
+          }${health.rhrDays ? ` · ${health.rhrDays} jours mesurés` : ""}`
+        );
+      }
       if (health.hrvMs) lines.push(`- HRV : ${health.hrvMs} ms`);
       else lines.push("- HRV : non disponible (Garmin ne synchronise pas le HRV vers Apple Santé)");
-      if (health.sleepMinutes) lines.push(`- Sommeil (dernière nuit importée) : ${Math.round(health.sleepMinutes / 60)} h ${Math.round(health.sleepMinutes % 60)} min`);
+      if (health.sleepMinutes) {
+        const avg30 = health.sleepAvg30 || null;
+        const delta = avg30 ? Math.round(health.sleepMinutes - avg30) : null;
+        lines.push(
+          `- Sommeil (dernière nuit importée) : ${formatMinutes(Math.round(health.sleepMinutes))}${
+            avg30 ? ` — ${delta > 0 ? "+" : ""}${delta} min vs moyenne 30 j (${formatMinutes(Math.round(avg30))})` : ""
+          }${health.sleepAvg7 ? ` · moyenne 7 j ${formatMinutes(Math.round(health.sleepAvg7))}` : ""}${
+            health.sleepDays ? ` · ${health.sleepDays} nuits mesurées` : ""
+          }`
+        );
+      }
       if (health.vo2) lines.push(`- VO2max estimée : ${health.vo2}`);
       lines.push(`- Import Apple Santé : ${health.records || 0} enregistrements, le ${formatFrDate(String(health.importedAt || "").slice(0, 10))}`);
     } else {
@@ -7833,6 +7904,41 @@
     const runPlan = runStepsFor(today);
     if (runPlan) {
       lines.push(`- Course du jour : ${runPlan.steps.filter((step) => step.minutes).map((step) => `${step.label} ${step.minutes} min`).join(" → ")}`);
+    }
+
+    // v7.8.0 : la pliométrie et son palier — c'est la décision la plus
+    // sensible du bloc, elle n'avait aucune trace dans le briefing.
+    const plyo = plyoDecision();
+    const plyoDone = plyoHistory(35).filter((e) => plyoClean(e));
+    lines.push(
+      `- Pliométrie : palier ${PLYO_TIER_LABEL[plyo.tier]}${plyo.held ? " (maintenu)" : ""} — ${plyo.reason}`
+    );
+    if (plyoDone.length) {
+      lines.push(
+        `  Séances propres déclarées : ${plyoDone
+          .slice(0, 6)
+          .map((e) => `${formatShortDate(e.key)} ${PLYO_TIER_LABEL[e.tier] || "?"}${Number(e.calfPain) > 0 ? ` (mollet ${e.calfPain}/10)` : ""}`)
+          .join(", ")}`
+      );
+    } else {
+      lines.push("  Aucune séance de pliométrie déclarée propre à ce jour.");
+    }
+
+    // Volume hebdomadaire par groupe : le repère d'hypertrophie du bloc.
+    const volume = weeklyVolume(7);
+    const volumeTotal = Object.values(volume).reduce((a, b) => a + b, 0);
+    if (volumeTotal) {
+      lines.push(
+        `- Volume 7 j par groupe (repère 10-20 séries) : ${MUSCLE_GROUPS.filter((g) => volume[g.id])
+          .map((g) => `${g.label} ${volume[g.id]}`)
+          .join(" · ")} — total ${volumeTotal} séries`
+      );
+      const under = MUSCLE_GROUPS.filter((g) => volume[g.id] > 0 && volume[g.id] < 10).map((g) => g.label);
+      const zero = MUSCLE_GROUPS.filter((g) => !volume[g.id]).map((g) => g.label);
+      if (zero.length) lines.push(`  Aucune série cette semaine : ${zero.join(", ")}`);
+      if (under.length) lines.push(`  Sous la fourchette de progression : ${under.join(", ")}`);
+    } else {
+      lines.push("- Volume 7 j par groupe : aucune série enregistrée.");
     }
 
     const keys = briefingDayKeys(days);
@@ -7874,6 +7980,14 @@
         if (entry.evening.reason) lines.push(`  Raison notée : ${entry.evening.reason}`);
         if (entry.evening.comment) lines.push(`  Commentaire : ${entry.evening.comment}`);
       }
+      if (entry.plyo?.done) {
+        const q = { complete: "complète", partial: "écourtée", none: "non faite" }[entry.plyo.quality] || entry.plyo.quality;
+        lines.push(
+          `Pliométrie ${PLYO_TIER_LABEL[entry.plyo.tier] || "?"} : ${q} · mollet ${entry.plyo.calfPain ?? 0}/10${
+            Number(entry.plyo.calfPain) > 3 ? " ⚠️ palier redescendu" : ""
+          }${entry.plyo.note ? ` · ${entry.plyo.note}` : ""}`
+        );
+      }
       if (entry.calfTest?.done) {
         const t = entry.calfTest;
         const repsTxt = t.raisesReps !== "" && t.raisesReps !== null ? `${t.raisesReps} élévations${t.raisesPain ? " AVEC douleur" : " sans douleur"}` : "élévations non comptées";
@@ -7912,6 +8026,8 @@
     if (microSkipped.length) missing.push(`aucune micro-session cochée sur ${microSkipped.length} jour(s)`);
     const mondaysNoTest = keys.filter((key) => calfTestDay(key) && !state.journal[key]?.calfTest?.done);
     if (mondaysNoTest.length) missing.push(`tests mollet du lundi non renseignés (${mondaysNoTest.length} lundi(s))`);
+    const plyoDaysNoLog = keys.filter((key) => plyoDay(key) && !plyoLog(key)?.done);
+    if (plyoDaysNoLog.length) missing.push(`pliométrie non déclarée sur ${plyoDaysNoLog.length} séance(s) Haut A/B`);
     if (missing.length) {
       lines.push("");
       lines.push("## Données manquantes à signaler au coach");
