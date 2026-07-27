@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "8.1.1";
+  const APP_VERSION = "8.2.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -43,10 +43,11 @@
     { key: "subjective", label: "Ressenti", weight: 15 },
   ];
 
+  // v8.2.0 : la séance d'abord — c'est ce que Ghislain vient chercher.
   const todayViews = [
+    { id: "workout", label: "Séance" },
     { id: "summary", label: "Synthèse" },
     { id: "checkin", label: "Check-in" },
-    { id: "workout", label: "Séance" },
     { id: "evening", label: "Bilan" },
     { id: "history", label: "Historique" },
     { id: "data", label: "Données" },
@@ -126,7 +127,7 @@
     dataMode: "blank",
     lastSavedAt: null,
     activeTab: "today",
-    activeTodayView: "summary",
+    activeTodayView: "workout",
     theme: "dark",
     uiVersion: 2,
     settingsOpen: false,
@@ -3136,9 +3137,13 @@
             <p class="eyebrow">Séance prescrite</p>
             <h2>Ce que tu dois faire aujourd'hui</h2>
           </div>
-          <div class="head-badges">${
-            alreadyLogged ? StatusBadge("Déjà enregistrée", "good") : missingRpe ? StatusBadge(`${missingRpe} RPE à remplir`, "watch") : StatusBadge("Prêt à enregistrer", "good")
-          }${SaveBadge()}</div>
+          <div class="head-badges">${(() => {
+            const doneCount = items.filter((item) => isExerciseDone(item.name)).length;
+            if (alreadyLogged) return StatusBadge("Déjà enregistrée", "good");
+            if (doneCount && doneCount < items.length) return StatusBadge(`${doneCount}/${items.length} faits`, "watch");
+            if (missingRpe) return StatusBadge(`${missingRpe} RPE à remplir`, "watch");
+            return StatusBadge("Prêt à enregistrer", "good");
+          })()}${SaveBadge()}</div>
         </div>
         <p class="small-text">Les charges sont calculées depuis tes dernières séances et la double progression du bloc. Corrige uniquement ce qui a différé, et renseigne le RPE réel — c'est lui qui pilote la séance suivante.</p>
         <div class="presc-list">
@@ -3149,10 +3154,18 @@
               const ramp = warmupRamp(item.weight, item.name);
               const open = draft.openWarmup === item.name;
               return `
-                <article class="presc-row ${item.status}">
+                <article class="presc-row ${item.status} ${isExerciseDone(item.name) ? "done" : ""}">
                   <div class="presc-head">
-                    <strong>${escapeHtml(item.name)}</strong>
-                    <span class="presc-target">${escapeHtml(item.spec.sets ? `${item.spec.sets} × ${item.spec.repsMin}${item.spec.repsMax !== item.spec.repsMin ? `-${item.spec.repsMax}` : ""}` : "")}${item.spec.rpe ? ` · RPE ${String(item.spec.rpe).replace(".", ",")}` : ""}${item.spec.restSec ? ` · repos ${item.spec.restSec >= 60 ? `${Math.round(item.spec.restSec / 60)} min` : `${item.spec.restSec} s`}` : ""}</span>
+                    <button type="button" class="ex-check ${isExerciseDone(item.name) ? "done" : ""}" data-action="toggle-exercise-done" data-name="${escapeHtml(item.name)}" aria-pressed="${isExerciseDone(item.name)}" aria-label="${isExerciseDone(item.name) ? "Décocher" : "Cocher"} ${escapeHtml(item.name)}">${isExerciseDone(item.name) ? "✓" : ""}</button>
+                    <div class="presc-title">
+                      <strong>${escapeHtml(item.name)}</strong>
+                      <span class="presc-target">${escapeHtml(item.spec.sets ? `${item.spec.sets} × ${item.spec.repsMin}${item.spec.repsMax !== item.spec.repsMin ? `-${item.spec.repsMax}` : ""}` : "")}${item.spec.rpe ? ` · RPE ${String(item.spec.rpe).replace(".", ",")}` : ""}${item.spec.restSec ? ` · repos ${item.spec.restSec >= 60 ? `${Math.round(item.spec.restSec / 60)} min` : `${item.spec.restSec} s`}` : ""}</span>
+                    </div>
+                    ${
+                      exerciseSheet(item.name)
+                        ? `<button type="button" class="presc-sheet" data-action="open-exercise" data-exercise="${escapeHtml(item.name)}" data-exercise-detail="${escapeHtml(item.detail || "")}">Fiche ›</button>`
+                        : ""
+                    }
                   </div>
                   <p class="presc-why">${escapeHtml(item.why)}${item.last?.source ? ` <span class="presc-source">(${escapeHtml(item.last.source)})</span>` : ""}</p>
                   <div class="presc-fields">
@@ -8062,6 +8075,7 @@
           exercises,
         });
         state.sessionDraft = null;
+        day().exercisesDone = []; // v8.2.0 : les coches ont fait leur travail
         addCoachMessage("coach", `Séance enregistrée (${exercises.length} exercices avec RPE). Les charges de la prochaine séance sont recalculées.`);
       }
     }
@@ -8628,13 +8642,17 @@
   // ce qu'il y a à faire maintenant. La navigation manuelle reprend la main ensuite.
 
   function suggestedTodayView() {
-    const hour = new Date().getHours();
     const session = programActive() ? programSessionFor() : null;
     const hasSession = Boolean(session) && session.kind !== "repos";
     const sessionLogged = (day().workouts || []).length > 0 || daySessions().length > 0;
 
+    // v8.2.0 : tant qu'une séance est prévue et non enregistrée, c'est elle
+    // qu'on ouvre, à n'importe quelle heure. Le check-in et le bilan ne passent
+    // devant que les jours sans séance, ou une fois la séance dans le journal.
+    if (hasSession && !sessionLogged) return "workout";
+
+    const hour = new Date().getHours();
     if (!morning().completed && hour < 14) return "checkin";
-    if (hasSession && !sessionLogged && hour >= 10 && hour < 21) return "workout";
     if (hour >= 17 && !evening().touched) return "evening";
     return "summary";
   }

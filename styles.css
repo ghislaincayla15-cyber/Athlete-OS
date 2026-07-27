@@ -3094,9 +3094,54 @@ body.light .ring {
 .presc-row.undercalibrated { border-left: 3px solid var(--watch, #F0B84A); }
 .presc-row.calibrate { border-left: 3px solid var(--muted, #8a8f98); }
 
-.presc-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+/* v8.2.0 — chaque exercice prescrit se coche et ouvre sa fiche */
+.presc-head { display: grid; grid-template-columns: 26px 1fr auto; align-items: start; gap: 10px; }
+.presc-title { display: grid; gap: 3px; min-width: 0; }
 .presc-head strong { font-size: 0.95rem; letter-spacing: -0.01em; }
 .presc-target { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+
+.presc-head .ex-check {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border: 1.5px solid var(--line-strong, var(--line));
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.presc-head .ex-check.done {
+  border-color: var(--volt, #c0f04a);
+  background: var(--volt, #c0f04a);
+  color: #10130f;
+}
+
+.presc-sheet {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--volt, #c0f04a);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.presc-sheet:hover { border-color: var(--volt, #c0f04a); }
+
+/* Fait : barré et estompé, mais les champs restent saisissables. */
+.presc-row.done { opacity: 0.66; }
+/* Seul le nom est barré : le raisonnement doit rester lisible pour la saisie. */
+.presc-row.done .presc-title strong { text-decoration: line-through; }
 
 .presc-why { margin: 6px 0 10px; color: var(--muted); font-size: 0.79rem; line-height: 1.45; }
 .presc-source { opacity: 0.7; }
