@@ -3702,3 +3702,16 @@ button.stat-tile.tappable::after {
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+
+/* v8.4.0 — le lien « Fiche » s'aligne dans un label de formulaire */
+.field label .presc-sheet,
+.field .label .presc-sheet {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.plyo-list .presc-sheet {
+  margin-left: 6px;
+  vertical-align: middle;
+  font-weight: 700;
+}

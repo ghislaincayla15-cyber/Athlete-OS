@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "8.3.0";
+  const APP_VERSION = "8.4.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -3076,7 +3076,7 @@
             .map(
               (ex) => `
               <li>
-                <strong>${escapeHtml(ex.name.replace("Pliométrie · ", ""))}</strong>
+                <strong>${escapeHtml(ex.name.replace("Pliométrie · ", ""))} ${SheetLink(ex.name, ex.detail)}</strong>
                 <span>${escapeHtml(ex.detail)}</span>
               </li>
             `
@@ -3178,11 +3178,7 @@
                       <strong>${escapeHtml(item.name)}</strong>
                       <span class="presc-target">${escapeHtml(item.spec.sets ? `${item.spec.sets} × ${item.spec.repsMin}${item.spec.repsMax !== item.spec.repsMin ? `-${item.spec.repsMax}` : ""}` : "")}${item.spec.rpe ? ` · RPE ${String(item.spec.rpe).replace(".", ",")}` : ""}${item.spec.restSec ? ` · repos ${item.spec.restSec >= 60 ? `${Math.round(item.spec.restSec / 60)} min` : `${item.spec.restSec} s`}` : ""}</span>
                     </div>
-                    ${
-                      exerciseSheet(item.name)
-                        ? `<button type="button" class="presc-sheet" data-action="open-exercise" data-exercise="${escapeHtml(item.name)}" data-exercise-detail="${escapeHtml(item.detail || "")}">Fiche ›</button>`
-                        : ""
-                    }
+                    ${SheetLink(item.name, item.detail || "")}
                   </div>
                   <p class="presc-why">${escapeHtml(item.why)}${item.last?.source ? ` <span class="presc-source">(${escapeHtml(item.last.source)})</span>` : ""}</p>
                   <div class="presc-fields">
@@ -3351,7 +3347,7 @@
             </label>
           </div>
           <div class="field">
-            <label for="calf-reps">Élévations unijambe (amplitude complète)</label>
+            <label for="calf-reps">Élévations unijambe (amplitude complète) ${SheetLink("Élévations mollet unijambe (test)")}</label>
             <input id="calf-reps" type="number" min="0" max="60" inputmode="numeric" value="${escapeHtml(String(test.raisesReps ?? ""))}" data-scope="calfTest" data-key="raisesReps" placeholder="objectif 25-30 / jambe" />
           </div>
           <div class="field">
@@ -3361,7 +3357,7 @@
             </label>
           </div>
           <div class="field full">
-            <span class="label">15 sautillements unipodaux, faible amplitude</span>
+            <span class="label">15 sautillements unipodaux, faible amplitude ${SheetLink("Sautillements unipodaux (test)")}</span>
             <div class="segmented">
               <button type="button" class="segmented-button ${test.hopsOk === true ? "active" : ""}" data-action="calf-hops" data-value="ok">Sans douleur</button>
               <button type="button" class="segmented-button ${test.hopsOk === false ? "active" : ""}" data-action="calf-hops" data-value="pain">Douleur</button>
@@ -5201,6 +5197,38 @@
   // on touche la ligne de l'exercice et la fiche s'ouvre dans l'app.
 
   const EXERCISE_LIBRARY = {
+    "Élévations mollet unijambe (test)": {
+      "title": "Test 1 — élévations mollet unijambe",
+      "rx": "Objectif 25-30 répétitions par jambe, sans douleur",
+      "exec": "debout sur une jambe, l'avant-pied sur le bord d'une marche ou à plat au sol, genou tendu (jambe verrouillée, pas bloquée). Le bout des doigts touche un mur uniquement pour l'équilibre — aucun appui qui te soulage. Monte le plus haut possible sur la pointe, redescends en contrôle jusqu'à l'amplitude complète. Cadence régulière, environ une répétition toutes les deux secondes : c'est un test d'endurance, pas de vitesse. Compte les répétitions jusqu'à ce que tu ne puisses plus monter à hauteur complète, ou que la douleur apparaisse. Refais le test sur l'autre jambe et note le plus faible des deux.",
+      "err": "prendre appui sur le mur pour s'aider (fausse le résultat), plier le genou pendant la montée (le soléaire prend le relais du gastrocnémien), écourter l'amplitude en fin de série sans s'en rendre compte, ou aller au-delà de la douleur pour « faire le chiffre ». Le test s'arrête à la douleur, pas au chiffre.",
+      "videos": [
+        {
+          "url": "https://library.theprehabguys.com/vimeo-video/single-leg-heel-raise-strength-test/",
+          "label": "Démonstration — [P]rehab (EN)"
+        },
+        {
+          "url": "https://dralisongrimaldi.com/blog/mastering-the-calf-raise-test/",
+          "label": "Protocole détaillé — Dr Alison Grimaldi (EN)"
+        }
+      ]
+    },
+    "Sautillements unipodaux (test)": {
+      "title": "Test 2 — 15 sautillements unipodaux",
+      "rx": "15 sautillements par jambe, faible amplitude, sans douleur",
+      "exec": "sur une jambe, sur place, sur l'avant-pied. Sautillements bas et élastiques — quelques centimètres seulement, le talon ne touche presque pas le sol. Le genou reste souple et absorbe. Cherche un rythme régulier plutôt que de la hauteur : c'est la qualité du rebond qu'on teste, pas la puissance. 15 contacts, puis l'autre jambe.",
+      "err": "sauter haut (transforme un test de tolérance en test de puissance), atterrir talon en premier, ou verrouiller le genou à la réception. Le test est validé seulement s'il est indolore pendant ET le lendemain matin au réveil : une douleur qui n'apparaît qu'au réveil compte comme un échec.",
+      "videos": [
+        {
+          "url": "https://www.pogophysio.com.au/blog/to-run-or-rest/",
+          "label": "Le test expliqué — POGO Physio (EN)"
+        },
+        {
+          "url": "https://www.physio-pedia.com/Hop_Test",
+          "label": "Référence — Physiopedia (EN)"
+        }
+      ]
+    },
     "Squat": {
       "title": "Squat barre",
       "rx": "4 × 4-6 · RPE 7→8 · repos 3 min",
@@ -5650,6 +5678,16 @@
 
   function exerciseSheet(name) {
     return EXERCISE_LIBRARY[name] || null;
+  }
+
+  // v8.4.0 : un seul lien « Fiche › », réutilisable partout où un exercice est
+  // nommé. Les fiches de pliométrie existaient depuis longtemps mais n'étaient
+  // ouvrables nulle part ; les tests mollet, eux, n'en avaient aucune.
+  function SheetLink(name, detail = "") {
+    if (!exerciseSheet(name)) return "";
+    return `<button type="button" class="presc-sheet" data-action="open-exercise" data-exercise="${escapeHtml(name)}"${
+      detail ? ` data-exercise-detail="${escapeHtml(detail)}"` : ""
+    }>Fiche ›</button>`;
   }
 
   function ExerciseRow(item, context = "") {
