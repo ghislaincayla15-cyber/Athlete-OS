@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "8.2.0";
+  const APP_VERSION = "8.3.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -68,7 +68,10 @@
     decisionLabel: "",
     decisionTone: "",
     workoutStarted: false,
-    workoutStartedAt: null, // horodatage de début (séance en cours)
+    // v8.3.0 : `workoutStartedAt` et le « mode séance » (démarrer / terminer /
+    // annuler, chronomètre, seconde liste d'exercices) ont été retirés. Depuis
+    // la v8.2.0, cocher un exercice directement sur la carte de prescription
+    // fait le même travail sans état supplémentaire à démarrer ni à clore.
     exercisesDone: [], // noms des exercices cochés pendant la séance
     microDone: [], // v6.0.0 : identifiants des micro-sessions faites (mobilité, étirements)
     adaptationPending: false,
@@ -142,6 +145,7 @@
     openMicro: "", // v7.3.0 : micro-session dont le détail est déplié
     manualLogOpen: false, // v7.4.0 : formulaire libre déplié malgré une prescription
     calWeekOffset: 0, // v7.5.0 : semaine affichée dans le calendrier (0 = celle en cours)
+    howToOpen: false, // v8.3.0 : consignes de conduite de séance dépliées
     expandedProgramDay: null,
     journal: {},
     program: {
@@ -3129,13 +3133,21 @@
     const draft = sessionDraft(key);
     const alreadyLogged = (day(key).workouts || []).some((w) => w.type === "muscu");
     const missingRpe = items.filter((item) => !draft.rows[item.name]?.rpe).length;
+    // v8.3.0 : la carte porte l'identité de la séance. Elle n'a plus de jumelle
+    // en bas de page qui répétait le titre et relistait les mêmes exercices.
+    const session = programActive(key) ? programSessionFor(key) : null;
+    const week = programWeek(key);
+    const isDeloadWeek = week === BLOC1.deloadWeek;
 
     return `
       <section class="card">
         <div class="card-head card-head--save">
           <div>
-            <p class="eyebrow">Séance prescrite</p>
-            <h2>Ce que tu dois faire aujourd'hui</h2>
+            <p class="eyebrow">Séance du jour${week ? ` · semaine ${week === 0 ? "d'amorce" : `${week}/${BLOC1.totalWeeks}`}` : ""}${
+              programPhase(week)?.label ? ` · ${escapeHtml(programPhase(week).label.toLowerCase())}` : ""
+            }</p>
+            <h2>${escapeHtml(session?.title || "Ce que tu dois faire aujourd'hui")}</h2>
+            ${session?.focus ? `<p class="small-text session-focus">${escapeHtml(session.focus)}</p>` : ""}
           </div>
           <div class="head-badges">${(() => {
             const doneCount = items.filter((item) => isExerciseDone(item.name)).length;
@@ -3144,6 +3156,11 @@
             if (missingRpe) return StatusBadge(`${missingRpe} RPE à remplir`, "watch");
             return StatusBadge("Prêt à enregistrer", "good");
           })()}${SaveBadge()}</div>
+        </div>
+        <div class="session-meta">
+          <span><b>${session?.duration ? `${session.duration} min` : "—"}</b> prévues</span>
+          <span>RPE cible <b>${escapeHtml(isDeloadWeek ? "≤ 6 (deload)" : String(session?.rpe ?? "—"))}</b></span>
+          <span><b>${items.length}</b> exercice${items.length > 1 ? "s" : ""}</span>
         </div>
         <p class="small-text">Les charges sont calculées depuis tes dernières séances et la double progression du bloc. Corrige uniquement ce qui a différé, et renseigne le RPE réel — c'est lui qui pilote la séance suivante.</p>
         <div class="presc-list">
@@ -3203,6 +3220,27 @@
         </div>
         ${draft.error ? `<p class="presc-error">${escapeHtml(draft.error)}</p>` : ""}
         <button type="button" class="primary-button" data-action="save-prescribed">${icon("check")}Enregistrer la séance</button>
+        ${
+          isDeloadWeek
+            ? `<div class="notice"><strong>Semaine de deload planifiée</strong><p>Volume réduit de 40 % (2 séries par exercice), RPE plafonné à 6, aucune série à l'échec.</p></div>`
+            : ""
+        }
+        <button type="button" class="presc-toggle" data-action="toggle-howto">${state.howToOpen ? "Masquer" : "Comment mener la séance"} ›</button>
+        ${
+          state.howToOpen
+            ? `<div class="presc-detail">
+                <p>Échauffement 8-10 min : mobilité, puis 2 séries légères du premier exercice. Ensuite les exercices dans l'ordre affiché.</p>
+                <p>Les temps de repos font partie de la charge — les écourter change la séance.</p>
+                <p>Le RPE est ton garde-fou : RPE 7 = il te reste 3 répétitions en réserve, RPE 8 = 2. Tu ne vas jamais à l'échec sur ce bloc.</p>
+                <p>Douleur mollet > 3/10 → tu arrêtes l'exercice et tu le signales au bilan du soir.</p>
+              </div>`
+            : ""
+        }
+        <div class="button-row" style="margin-top:12px">
+          <button type="button" class="secondary-button" data-action="open-move-session">Déplacer</button>
+          <a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a>
+        </div>
+        ${MoveSessionPicker()}
       </section>
     `;
   }
@@ -4212,129 +4250,56 @@
     `;
   }
 
-  function WorkoutCard(decision) {
-    const session = programActive() ? programSessionFor() : null;
-
-    if (session) {
-      const week = programWeek();
-      const isDeloadWeek = week === BLOC1.deloadWeek;
+  // v8.3.0 : les jours sans séance prescrite (repos, hors bloc), la vue Séance
+  // aurait été vide. Une carte courte, et rien de plus.
+  function RestDayCard(key = dateKey()) {
+    if (prescriptionFor(key).length || runPrescription(key)) return "";
+    const session = programActive(key) ? programSessionFor(key) : null;
+    if (!session) {
       return `
-        <section class="workout-card">
-          <div class="workout-head">
-            <div>
-              <p class="eyebrow">Séance du jour · ${escapeHtml(BLOC1.name)}</p>
-              <h2 class="workout-title">${escapeHtml(session.title)}</h2>
-              <p class="workout-subtitle">${escapeHtml(session.focus)}</p>
-            </div>
-            ${StatusBadge(day().workoutStartedAt ? "En cours" : session.kind === "repos" ? "Repos" : "Prévue", day().workoutStartedAt ? "good" : decision.tone)}
-          </div>
-          <div class="stat-grid">
-            <div class="stat-tile"><span>Semaine</span><strong>${week === 0 ? "Amorce" : `${week} / ${BLOC1.totalWeeks}`}</strong></div>
-            <div class="stat-tile"><span>Durée</span><strong>${session.duration ? `${session.duration} min` : "—"}</strong></div>
-            <div class="stat-tile"><span>RPE cible</span><strong>${escapeHtml(isDeloadWeek && session.kind !== "repos" ? "≤ 6 (deload)" : session.rpe)}</strong></div>
-            <div class="stat-tile"><span>Phase</span><strong>${escapeHtml(programPhase(week)?.label || "—")}</strong></div>
-          </div>
-          ${day().workoutStartedAt ? LiveWorkoutBanner(session) : ""}
-          ${
-            session.exercises.length
-              ? `<div class="exercise-list">
-                  ${session.exercises.map((item) => (day().workoutStartedAt ? LiveExerciseRow(item) : ExerciseRow(item, "session"))).join("")}
-                </div>
-                <p class="small-text">${
-                  day().workoutStartedAt
-                    ? "Coche chaque exercice terminé. Le rond à gauche coche, le reste de la ligne ouvre la fiche."
-                    : "Touche un exercice pour la fiche : exécution, erreurs à éviter et vidéo."
-                }</p>`
-              : ""
-          }
-          <p class="small-text">Mobilité et étirements du jour : voir la carte « Micro-sessions » juste en dessous.</p>
-          ${
-            session.kind === "muscu"
-              ? `<div class="notice"><strong>Comment mener la séance</strong><p>Échauffement 8-10 min (mobilité + 2 séries légères du premier exercice), puis les exercices dans l'ordre affiché. Respecte les temps de repos : ils font partie de la charge. Le RPE est ton garde-fou — RPE 7 = il te reste 3 répétitions en réserve, RPE 8 = 2. Tu ne vas jamais à l'échec sur ce bloc. Douleur mollet > 3/10 → tu arrêtes l'exercice et tu le signales au bilan du soir.</p></div>`
-              : session.kind === "course"
-                ? `<div class="notice"><strong>Comment mener la séance</strong><p>Échauffement systématique : 5 min de marche rapide puis 5 min de trot très lent. Zone 2 = tu peux tenir une conversation en phrases complètes du début à la fin ; si tu es essoufflé, tu vas trop vite, ralentis même si l'allure te paraît ridicule. Douleur mollet > 3/10 → tu passes en marche et tu le notes au bilan.</p></div>`
-                : ""
-          }
-          ${
-            isDeloadWeek && session.kind !== "repos"
-              ? `<div class="notice"><strong>Semaine de deload planifiée</strong><p>Volume réduit de 40 % (2 séries par exercice), RPE plafonné à 6, aucune série à l'échec. Courses : 30 min faciles.</p></div>`
-              : ""
-          }
-          ${
-            session.kind !== "repos"
-              ? `<div class="button-row">
-                  ${
-                    day().workoutStartedAt
-                      ? ""
-                      : `<button type="button" class="primary-button" data-action="start-workout">${icon("play")}Démarrer la séance</button>`
-                  }
-                  <button type="button" class="secondary-button" data-action="request-adaptation">${icon("tune")}Adapter la séance</button>
-                  <button type="button" class="secondary-button" data-action="open-move-session">Déplacer</button>
-                  <a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a>
-                </div>`
-              : `<div class="button-row">
-                  <button type="button" class="secondary-button" data-action="open-move-session">Déplacer</button>
-                  <a class="secondary-button" href="${BLOC1.guideUrl}" target="_blank" rel="noopener" style="text-decoration:none">Guide des exercices</a>
-                </div>`
-          }
-          ${MoveSessionPicker()}
-          ${
-            day().adaptationPending
-              ? `<div class="notice">
-                  <strong>Confirmation requise</strong>
-                  <p>Proposition : retirer une série d’assistance, ajouter 30 s de repos sur les mouvements lourds et garder 2 répétitions en réserve.</p>
-                  <div class="button-row">
-                    <button type="button" class="primary-button" data-action="confirm-adaptation">${icon("check")}Confirmer</button>
-                    <button type="button" class="secondary-button" data-action="cancel-adaptation">Garder le plan</button>
-                  </div>
-                </div>`
-              : ""
-          }
-        </section>
-      `;
-    }
-
-    if (programUpcoming()) {
-      return `
-        <section class="workout-card">
-          <div class="workout-head">
+        <section class="card">
+          <div class="card-head">
             <div>
               <p class="eyebrow">Séance du jour</p>
-              <h2 class="workout-title">Bloc 1 programmé</h2>
-              <p class="workout-subtitle">${escapeHtml(BLOC1.goal)}</p>
+              <h2>${programUpcoming() ? `Le bloc démarre le ${escapeHtml(formatFrDate(programStartDate()))}` : "Aucune séance programmée"}</h2>
             </div>
-            ${StatusBadge(`J-${daysUntilBlockStart()}`, "info")}
+            ${StatusBadge(programUpcoming() ? `J-${daysUntilBlockStart()}` : "Hors bloc", "info")}
           </div>
-          <div class="empty-state">
-            <strong>Départ le ${escapeHtml(formatFrDate(programStartDate()))}</strong>
-            <p>4 séances de musculation (Upper/Lower), 2 courses zone 2 et 1 repos complet par semaine, deload en semaine ${BLOC1.deloadWeek}. D'ici là : check-ins quotidiens pour construire ta base de readiness, et repérage des charges si tu veux t'échauffer.</p>
-          </div>
-          <div class="button-row">
-            <button type="button" class="secondary-button" data-action="start-block-now">${icon("play")}Commencer dès cette semaine</button>
-          </div>
+          <p class="small-text">${
+            programUpcoming()
+              ? "D'ici là : check-ins quotidiens pour construire ta base de readiness, et tour de taille de référence."
+              : "Tu peux enregistrer une séance libre plus bas."
+          }</p>
         </section>
       `;
     }
     return `
-      <section class="workout-card">
-        <div class="workout-head">
+      <section class="card">
+        <div class="card-head">
           <div>
-            <p class="eyebrow">Séance du jour</p>
-            <h2 class="workout-title">Aucune séance planifiée</h2>
-            <p class="workout-subtitle">Ton programme n’est pas encore renseigné.</p>
+            <p class="eyebrow">Séance du jour${programWeek(key) ? ` · semaine ${programWeek(key)}/${BLOC1.totalWeeks}` : ""}</p>
+            <h2>${escapeHtml(session.title)}</h2>
+            <p class="small-text session-focus">${escapeHtml(session.focus)}</p>
           </div>
-          ${StatusBadge("À créer", "watch")}
+          ${StatusBadge(session.kind === "repos" ? "Repos" : "Prévue", "info")}
         </div>
-        <div class="empty-state">
-          <strong>Repartir de zéro est actif</strong>
-          <p>Ajoute ton programme, importe Apple Santé ou charge la démo depuis les paramètres si tu veux revoir un exemple rempli.</p>
+        <p class="small-text">${
+          session.kind === "repos"
+            ? "Rien à exécuter aujourd'hui. La mobilité du matin et les étirements du soir restent le plancher — ils sont juste en dessous."
+            : "Aucune charge à prescrire pour cette séance."
+        }</p>
+        <div class="button-row" style="margin-top:12px">
+          <button type="button" class="secondary-button" data-action="open-move-session">Déplacer</button>
         </div>
-        <div class="button-row">
-          <button type="button" class="primary-button" data-action="toggle-settings">${icon("settings")}Sources & paramètres</button>
-        </div>
+        ${MoveSessionPicker()}
       </section>
     `;
   }
+
+  // v8.3.0 : WorkoutCard() retirée (7223 caractères). Elle répétait le titre
+  // de la séance ET relistait les mêmes exercices sous la carte de prescription
+  // qui les porte déjà avec leurs champs, leurs coches et leurs fiches.
+
 
   function MorningCheckIn() {
     return `
@@ -5705,80 +5670,14 @@
     `;
   }
 
-  let liveTimerId = null;
 
-  // Le chrono se met à jour tout seul sans reconstruire l'écran.
-  function syncLiveTimer() {
-    const node = document.querySelector("[data-live-timer]");
-    if (!node) {
-      if (liveTimerId) {
-        clearInterval(liveTimerId);
-        liveTimerId = null;
-      }
-      return;
-    }
-    if (liveTimerId) return;
-    liveTimerId = setInterval(() => {
-      const target = document.querySelector("[data-live-timer]");
-      if (!target) {
-        clearInterval(liveTimerId);
-        liveTimerId = null;
-        return;
-      }
-      target.textContent = `${liveWorkoutMinutes()} min`;
-    }, 20000);
-  }
-
-  function liveWorkoutMinutes() {
-    const started = day().workoutStartedAt;
-    if (!started) return 0;
-    const startedAt = new Date(started).getTime();
-    if (Number.isNaN(startedAt)) return 0;
-    return Math.max(0, Math.round((Date.now() - startedAt) / 60000));
-  }
 
   function isExerciseDone(name) {
     return (day().exercisesDone || []).includes(name);
   }
 
   // En séance : chaque exercice se coche d'un appui, et reste ouvrable pour sa fiche.
-  function LiveExerciseRow(item) {
-    const done = isExerciseDone(item.name);
-    const hasSheet = Boolean(exerciseSheet(item.name));
-    return `
-      <div class="exercise-row live ${done ? "done" : ""}">
-        <button type="button" class="ex-check ${done ? "done" : ""}" data-action="toggle-exercise-done" data-name="${escapeHtml(item.name)}" aria-pressed="${done}" aria-label="${done ? "Décocher" : "Cocher"} ${escapeHtml(item.name)}">
-          ${done ? "✓" : ""}
-        </button>
-        <button type="button" class="ex-open" ${hasSheet ? `data-action="open-exercise" data-exercise="${escapeHtml(item.name)}" data-exercise-detail="${escapeHtml(item.detail || "")}"` : "disabled"}>
-          <span class="exercise-main">
-            <strong>${escapeHtml(item.name)}</strong>
-            <span>${escapeHtml(item.detail || "")}</span>
-          </span>
-          ${hasSheet ? `<span class="exercise-cue">Fiche ›</span>` : ""}
-        </button>
-      </div>
-    `;
-  }
 
-  function LiveWorkoutBanner(session) {
-    const minutes = liveWorkoutMinutes();
-    const total = (session.exercises || []).length;
-    const done = (session.exercises || []).filter((item) => isExerciseDone(item.name)).length;
-    return `
-      <div class="live-banner">
-        <div class="live-info">
-          <span class="live-tag">Séance en cours</span>
-          <strong data-live-timer>${minutes} min</strong>
-          ${total ? `<span>${done} exercice${done > 1 ? "s" : ""} sur ${total}</span>` : ""}
-        </div>
-        <div class="live-actions">
-          <button type="button" class="primary-button" data-action="finish-workout">Terminer</button>
-          <button type="button" class="ghost-button" data-action="cancel-workout">Annuler</button>
-        </div>
-      </div>
-    `;
-  }
 
   function ExerciseSheetModal() {
     const name = state.openExercise;
@@ -6609,7 +6508,7 @@
           ${NotFullCard()}
           ${MicroCard()}
           ${WeatherCard()}
-          ${WorkoutCard(decision)}
+          ${RestDayCard()}
           ${WorkoutLogCard()}
           ${TodayWorkoutsList()}
           ${TodayActivitiesCard()}
@@ -7903,7 +7802,6 @@
     });
     maybeAnimateDonuts();
     applyPendingFocus();
-    syncLiveTimer();
   }
 
   let lastViewSignature = "";
@@ -8129,6 +8027,9 @@
       const delta = Number(actionButton.dataset.delta);
       state.calWeekOffset = delta === 0 ? 0 : (state.calWeekOffset || 0) + delta;
     }
+    if (action === "toggle-howto") {
+      state.howToOpen = !state.howToOpen;
+    }
     if (action === "toggle-manual-log") {
       state.manualLogOpen = !state.manualLogOpen;
     }
@@ -8163,52 +8064,10 @@
     if (action === "close-settings") {
       state.settingsOpen = false;
     }
-    if (action === "start-workout") {
-      day().workoutStarted = true;
-      day().workoutStartedAt = new Date().toISOString();
-      day().exercisesDone = [];
-      state.activeTab = "today";
-      state.activeTodayView = "workout";
-      addCoachMessage("user", "Je démarre la séance.");
-      addCoachMessage("coach", "C'est parti. Coche chaque exercice terminé, garde le RPE cible et arrête un mouvement si une douleur monte au-delà de 3/10.");
-    }
     if (action === "toggle-exercise-done") {
       const name = actionButton.dataset.name;
       const list = day().exercisesDone || [];
       day().exercisesDone = list.includes(name) ? list.filter((item) => item !== name) : [...list, name];
-    }
-    if (action === "cancel-workout") {
-      day().workoutStartedAt = null;
-      day().workoutStarted = false;
-      addCoachMessage("coach", "Séance annulée, rien n'a été enregistré. Tu peux la relancer ou la déplacer sur un autre jour.");
-    }
-    if (action === "finish-workout") {
-      const minutes = liveWorkoutMinutes();
-      const session = programActive() ? programSessionFor() : null;
-      const total = session?.exercises?.length || 0;
-      const done = (session?.exercises || []).filter((item) => isExerciseDone(item.name)).length;
-      const completion = total && done < total ? (done >= Math.ceil(total / 2) ? "adaptee" : "partial") : "complete";
-      day().workoutStartedAt = null;
-      day().workoutStarted = false;
-      day().evening = {
-        ...day().evening,
-        touched: true,
-        completion,
-        duration: minutes > 0 ? minutes : day().evening.duration,
-      };
-      logDecision(
-        "adherence",
-        `Séance terminée : ${labelFor("completion", completion).toLowerCase()}`,
-        `${done}/${total || "—"} exercice(s), ${minutes} min`,
-        "Séance suivie dans l'app",
-        "Eleve"
-      );
-      addCoachMessage(
-        "coach",
-        `Séance terminée en ${minutes} min${total ? `, ${done} exercice(s) sur ${total}` : ""}. C'est enregistré comme « ${labelFor("completion", completion).toLowerCase()} ». Il ne me manque que ton RPE et l'état du mollet au bilan du soir.`
-      );
-      state.activeTodayView = "evening";
-      pendingFocus = "rpe";
     }
     if (action === "request-adaptation") {
       day().adaptationPending = true;

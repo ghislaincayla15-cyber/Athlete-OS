@@ -3678,3 +3678,27 @@ button.stat-tile.tappable::after {
 }
 
 .stat-tile { position: relative; }
+
+/* v8.3.0 — la carte de prescription porte l'identité de la séance */
+.session-focus {
+  margin: 4px 0 0;
+  opacity: 0.85;
+}
+
+.session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 0.79rem;
+  color: var(--muted);
+}
+
+.session-meta b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
