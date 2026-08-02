@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "8.4.0";
+  const APP_VERSION = "8.5.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";

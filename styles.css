@@ -1,46 +1,57 @@
 /* ============================================================
-   Athlete OS — thème sombre sportif premium (défaut)
-   Accent signature : volt #C0F04A — validé CVD/contraste
+   Athlete OS — Kinetic Performance
+   Système de design importé de la maquette Stitch (27/07/2026).
+   Palette : lime néon #A3E635 sur obsidienne, typographie
+   Montserrat (titres, données) + Inter (corps, contrôles),
+   rayons courts 4/8/12 px, profondeur par superposition tonale
+   plutôt que par ombres.
    ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap");
 
 :root {
   color-scheme: dark;
 
-  /* Surfaces */
+  /* Surfaces — « black-out » pour fondre dans l'OLED */
   --bg: #0a0b0e;
-  --bg-strong: #0e1013;
-  --surface: #14171c;
-  --surface-muted: #1a1e24;
-  --line: rgba(255, 255, 255, 0.07);
-  --line-strong: rgba(255, 255, 255, 0.14);
+  --bg-strong: #0d0e11;
+  --surface: #16181d;
+  --surface-muted: #1c1e24;
+  --line: #26292f;
+  --line-strong: #343538;
 
   /* Encre */
-  --text: #eef1f4;
-  --muted: #98a1ac;
-  --subtle: #5f6873;
+  --text: #e3e2e6;
+  --muted: #d1d5db;
+  --subtle: #8c947c;
 
-  /* Accents (statuts toujours accompagnés de texte) */
-  --volt: #c0f04a;
-  --volt-ink: #0d1104;
-  --green: #c0f04a;
-  --green-soft: rgba(192, 240, 74, 0.13);
-  --orange: #e8842a;
-  --orange-soft: rgba(232, 132, 42, 0.14);
-  --red: #f4766b;
-  --red-soft: rgba(244, 118, 107, 0.13);
-  --indigo: #8b93f8;
-  --indigo-soft: rgba(139, 147, 248, 0.14);
-  --blue: #5eb3f6;
-  --blue-soft: rgba(94, 179, 246, 0.13);
+  /* Accents — le lime signale « actif », l'orange « attention » */
+  --volt: #a3e635;
+  --volt-bright: #ccff80;
+  --volt-ink: #121f00;
+  --green: #a3e635;
+  --green-soft: rgba(163, 230, 53, 0.14);
+  --orange: #f97316;
+  --orange-soft: rgba(249, 115, 22, 0.14);
+  --red: #ffb4ab;
+  --red-soft: rgba(255, 180, 171, 0.13);
+  --indigo: #e7b6f3;
+  --indigo-soft: rgba(231, 182, 243, 0.14);
+  --blue: #ffb690;
+  --blue-soft: rgba(255, 182, 144, 0.13);
 
-  --card-sheen: linear-gradient(165deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 42%);
-  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --card-sheen: none;
+  --shadow: none;
   --shadow-soft: none;
+  --glow: 0 4px 20px rgba(163, 230, 53, 0.15);
 
-  --radius: 24px;
-  --radius-sm: 16px;
+  /* Formes courtes : « précision d'ingénierie », pas de rondeur ludique */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 4px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Montserrat", "Inter", system-ui, sans-serif;
 }
 
 /* ---- Thème clair (secondaire, épuré) ---- */
@@ -3714,4 +3725,169 @@ button.stat-tile.tappable::after {
   margin-left: 6px;
   vertical-align: middle;
   font-weight: 700;
+}
+
+/* ============================================================
+   Kinetic Performance — application de la typographie et des
+   composants signature de la maquette.
+   ============================================================ */
+
+/* Titres et données en Montserrat lourd : « force et stabilité ». */
+h1, h2, h3,
+.workout-title,
+.decision-title,
+.gauge-value,
+.stat-tile strong,
+.cal-num,
+.volume-value,
+.range-value,
+.presc-head strong,
+.target-head strong {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+h1 { font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-weight: 700; }
+
+/* Les étiquettes majuscules de la maquette : Inter 700, 12 px, +0.08em. */
+.eyebrow,
+.stat-tile span,
+.presc-fields span,
+.cal-wd,
+.phase-range,
+.decision-detail span {
+  font-family: var(--font);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* Chiffres : allure de chronomètre — tabulaires, resserrés. */
+.gauge-value,
+.stat-tile strong,
+.volume-value,
+.cal-num,
+.range-value,
+.presc-fields input,
+.session-meta b {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Cartes : 1 px de trait, aucune ombre, superposition tonale. */
+.card,
+.form-panel,
+.decision-card,
+.workout-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+/* Bouton principal : lime plein, encre noire, halo discret. */
+.primary-button {
+  background: var(--volt);
+  color: var(--volt-ink);
+  border: 0;
+  border-radius: var(--radius-xs);
+  font-weight: 700;
+  box-shadow: var(--glow);
+}
+
+.primary-button:hover { background: var(--volt-bright); }
+
+.secondary-button,
+.ghost-button {
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--line);
+  background: transparent;
+}
+
+/* Champs : fond au niveau 0, soulignement lime à l'activation. */
+input[type="text"],
+input[type="number"],
+input[type="date"],
+select,
+textarea,
+.presc-fields input {
+  border-radius: var(--radius-xs);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  font-family: var(--font);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-bottom-color: var(--volt);
+}
+
+/* Puces de sélection : semi-pilule, pour les distinguer des boutons. */
+.quick-chip,
+.segmented-button,
+.badge {
+  border-radius: 12px;
+}
+
+/* Barres de progression : trait épais, reste à faible opacité. */
+.progress-track,
+.volume-bar {
+  background: rgba(163, 230, 53, 0.18);
+}
+
+.progress-fill,
+.volume-fill {
+  background: var(--volt);
+}
+
+/* Barre de navigation : pilule flottante, onglet actif en lime plein. */
+.mobile-nav {
+  border-radius: var(--radius);
+  border-color: var(--line);
+}
+
+.mobile-nav-button {
+  border-radius: var(--radius-sm);
+}
+
+.mobile-nav-button.active {
+  background: var(--volt);
+  color: var(--volt-ink);
+}
+
+.mobile-nav-button.active .nav-icon,
+.mobile-nav-button.active svg {
+  color: var(--volt-ink);
+  stroke: var(--volt-ink);
+}
+
+/* Cible tactile minimale de 44 px : mains moites, écran qui bouge. */
+.quick-chip,
+.segmented-button,
+.primary-button,
+.secondary-button,
+.ex-check,
+.mobile-nav-button {
+  min-height: 44px;
+}
+
+.presc-head .ex-check {
+  min-height: 26px;
+}
+
+/* Le lien « Fiche » reste sur la ligne du libellé, sans casser la cible tactile. */
+.field label,
+.field .label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.presc-sheet {
+  min-height: 0;
+  padding: 5px 10px;
+  border-radius: 12px;
 }
