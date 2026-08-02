@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "9.1.0";
+  const APP_VERSION = "9.1.1";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -8628,6 +8628,10 @@
 
   function render() {
     document.body.classList.toggle("light", state.theme === "light");
+    // v9.1.1 : le minuteur de repos est une barre fixe au-dessus de la barre
+    // d'onglets. Le contenu doit lui réserver sa hauteur, sinon le dernier
+    // bouton de la page passe dessous.
+    document.body.classList.toggle("rest-on", Boolean(state.restTimer?.endsAt));
     updateDocumentChrome();
     const page = pageCopy[state.activeTab] || pageCopy.today;
     app.innerHTML = `
