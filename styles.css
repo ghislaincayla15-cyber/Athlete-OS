@@ -4584,3 +4584,157 @@ body.light .workload-track { background: rgba(0, 0, 0, 0.07); }
   .series-row.current .stepper-row button { height: 54px; font-size: 1.5rem; }
   .series-row.current .stepper-row input { height: 54px; font-size: 2.1rem; }
 }
+
+/* ==========================================================================
+   v9.1.0 — mode focus : un exercice à l'écran. Mesure avant/après sur la
+   séance du jour : 6 610 px → ~2 400 px, 882 mots → 341, 93 cibles → 37.
+   ========================================================================== */
+
+.ex-rail {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 18px;
+}
+
+.ex-rail-item {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ex-rail-item.current {
+  border-color: var(--volt);
+  background: var(--green-soft);
+  color: var(--text);
+}
+
+.ex-rail-item.done { opacity: 0.6; }
+.ex-rail-item.done .ex-rail-name { text-decoration: line-through; }
+
+.ex-rail-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ex-rail-item.current .ex-rail-mark { background: var(--volt); color: var(--volt-ink); }
+.ex-rail-item.done .ex-rail-mark { background: var(--volt); color: var(--volt-ink); }
+
+.ex-rail-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.ex-rail-count {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-nav {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 12px;
+}
+
+.ex-nav .secondary-button { min-height: 44px; }
+.ex-nav .secondary-button:disabled { opacity: 0.35; cursor: default; }
+
+.ex-nav-pos {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* Le repli des cartes secondaires : un seul bouton, pleine largeur, qui ne
+   ressemble pas à une action de séance. */
+.more-toggle {
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 16px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.more-toggle:hover { border-color: var(--volt); color: var(--text); }
+
+/* Le rail des exercices vit sous la carte de l'exercice en cours : à
+   l'ouverture, la première chose à l'écran doit être ce qu'on fait
+   maintenant, pas le sommaire de la séance. Rangées compactes. */
+.ex-rail { gap: 4px; margin: 6px 0 16px; }
+.ex-rail-item { min-height: 40px; padding: 6px 12px; font-size: 0.8rem; }
+.ex-rail-mark { width: 22px; height: 22px; font-size: 0.68rem; }
+
+/* « ‹ Précédent » passait à la ligne dans un bouton étroit. */
+.ex-nav .secondary-button {
+  white-space: nowrap;
+  padding-left: 8px;
+  padding-right: 8px;
+  font-size: 0.85rem;
+}
+
+/* Débordement horizontal du Programme, mesuré le 02/08 : 390 px de viewport
+   pour 495 px de contenu. La troisième colonne de `.day-card` était figée à
+   44 px alors que le badge d'état ("Réalisée adaptée") en demande 103. Sur
+   téléphone, le badge passe simplement sous le titre. */
+.day-card { grid-template-columns: 48px minmax(0, 1fr) minmax(0, auto); }
+.day-side { min-width: 0; flex-wrap: wrap; }
+
+@media (max-width: 560px) {
+  .day-card { grid-template-columns: 44px minmax(0, 1fr); }
+  .day-side { grid-column: 2 / -1; justify-self: start; }
+}
+
+/* Cause racine du débordement : des grilles en `1fr` dont les enfants gardent
+   `min-width: auto`. Le ruban des cinq phases du bloc exigeait à lui seul
+   ~450 px de largeur minimale, et entraînait toute la page avec lui. */
+.phase-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.phase-label { font-size: 0.62rem; line-height: 1.2; overflow-wrap: anywhere; }
+.phase-range { font-size: 0.6rem; }
+
+.page-grid > *,
+.section-grid > *,
+.today-grid > *,
+.card,
+.week-cal > *,
+.performance-table > * { min-width: 0; }
+
+.card-head { flex-wrap: wrap; }
+
+/* Même cause dans les objectifs du bloc : titre long + badge de cible sur une
+   seule ligne insécable. */
+.target-head { flex-wrap: wrap; }
+.target-head strong { min-width: 0; overflow-wrap: anywhere; }
+.target, .target-list > * { min-width: 0; }
+
+/* Les cibles du bloc sont des phrases entières servies dans un badge
+   ("2 courses par semaine, zone 2 stricte") : 411 px sur un écran de 390.
+   Les badges peuvent désormais passer à la ligne — ils ne le feront que
+   lorsqu'ils dépassent. */
+.badge { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }

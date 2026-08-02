@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "9.0.0";
+  const APP_VERSION = "9.1.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -150,6 +150,9 @@
     activeTodayView: "workout",
     activeProfileView: "performance",
     calendarOffset: 0,
+    focusExercise: "", // v9.1.0 : l'exercice affiché plein écran pendant la séance
+    moreOpen: false, // v9.1.0 : les cartes secondaires de la séance
+    intentOpen: false, // v9.1.0 : le « pourquoi » des objectifs du bloc
     theme: "dark",
     uiVersion: 2,
     settingsOpen: false,
@@ -2753,7 +2756,7 @@
             <h2>Pas à 100 % aujourd'hui ?</h2>
           </div>
         </div>
-        <p class="small-text">Une séance allégée vaut toujours mieux qu'une séance sautée : elle entretient l'habitude et la technique sans creuser la fatigue.</p>
+        
         <button type="button" class="ghost-button" data-action="toggle-not-full">${open ? "Masquer la version allégée" : "Voir la version allégée"}</button>
         ${
           open
@@ -3305,6 +3308,64 @@
     `;
   }
 
+
+  // ---- v9.1.0 : mode focus ------------------------------------------------
+  // Mesure du 02/08 : l'écran de séance faisait 6 610 px de haut, 882 mots et
+  // 93 cibles tactiles — cinq exercices entièrement dépliés en même temps.
+  // Pendant une série, une seule question compte : « qu'est-ce que je fais
+  // maintenant ». Un exercice à l'écran, les autres réduits à une ligne.
+
+  function currentExerciseName(items) {
+    if (!items.length) return "";
+    const chosen = items.find((item) => item.name === state.focusExercise);
+    if (chosen) return chosen.name;
+    const pending = items.find((item) => seriesDone(item.name).length < seriesOf(item.name).length);
+    return (pending || items[items.length - 1]).name;
+  }
+
+  function focusItems(items) {
+    const name = currentExerciseName(items);
+    return items.filter((item) => item.name === name);
+  }
+
+  // La bande des exercices : où j'en suis dans la séance, en une ligne chacun.
+  function ExerciseRail(items) {
+    const current = currentExerciseName(items);
+    return `
+      <div class="ex-rail" role="tablist" aria-label="Exercices de la séance">
+        ${items
+          .map((item, i) => {
+            const total = seriesOf(item.name).length;
+            const done = seriesDone(item.name).length;
+            const state_ = done >= total ? "done" : item.name === current ? "current" : "todo";
+            return `
+              <button type="button" class="ex-rail-item ${state_}" data-action="focus-exercise" data-name="${escapeHtml(item.name)}" aria-current="${item.name === current}">
+                <span class="ex-rail-mark">${done >= total ? "✓" : i + 1}</span>
+                <span class="ex-rail-name">${escapeHtml(item.name)}</span>
+                <span class="ex-rail-count">${done}/${total}</span>
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  function ExerciseNav(items) {
+    const current = currentExerciseName(items);
+    const idx = items.findIndex((item) => item.name === current);
+    if (idx < 0 || items.length < 2) return "";
+    const prev = items[idx - 1];
+    const next = items[idx + 1];
+    return `
+      <div class="ex-nav">
+        <button type="button" class="secondary-button" data-action="focus-exercise" data-name="${escapeHtml(prev ? prev.name : "")}" ${prev ? "" : "disabled"}>‹ Précédent</button>
+        <span class="ex-nav-pos">${idx + 1} / ${items.length}</span>
+        <button type="button" class="secondary-button" data-action="focus-exercise" data-name="${escapeHtml(next ? next.name : "")}" ${next ? "" : "disabled"}>Suivant ›</button>
+      </div>
+    `;
+  }
+
   function PrescriptionCard(key = dateKey()) {
     const items = prescriptionFor(key);
     if (!items.length) return "";
@@ -3343,9 +3404,8 @@
           <span><b>${items.length}</b> exercice${items.length > 1 ? "s" : ""}</span>
         </div>
         ${SessionProgressBar(items)}
-        <p class="small-text">Les charges sont calculées depuis tes dernières séances et la double progression du bloc. Corrige uniquement ce qui a différé, et renseigne le RPE réel — c'est lui qui pilote la séance suivante.</p>
         <div class="presc-list">
-          ${items
+          ${focusItems(items)
             .map((item) => {
               const row = draft.rows[item.name] || { weight: "", reps: "", sets: "", rpe: "" };
               const plates = item.weight ? plateBreakdown(item.weight) : null;
@@ -3392,21 +3452,12 @@
             .join("")}
         </div>
         ${draft.error ? `<p class="presc-error">${escapeHtml(draft.error)}</p>` : ""}
+        ${ExerciseNav(items)}
+        ${ExerciseRail(items)}
         <button type="button" class="primary-button" data-action="save-prescribed">${icon("check")}Enregistrer la séance</button>
         ${
           isDeloadWeek
             ? `<div class="notice"><strong>Semaine de deload planifiée</strong><p>Volume réduit de 40 % (2 séries par exercice), RPE plafonné à 6, aucune série à l'échec.</p></div>`
-            : ""
-        }
-        <button type="button" class="presc-toggle" data-action="toggle-howto">${state.howToOpen ? "Masquer" : "Comment mener la séance"} ›</button>
-        ${
-          state.howToOpen
-            ? `<div class="presc-detail">
-                <p>Échauffement 8-10 min : mobilité, puis 2 séries légères du premier exercice. Ensuite les exercices dans l'ordre affiché.</p>
-                <p>Les temps de repos font partie de la charge — les écourter change la séance.</p>
-                <p>Le RPE est ton garde-fou : RPE 7 = il te reste 3 répétitions en réserve, RPE 8 = 2. Tu ne vas jamais à l'échec sur ce bloc.</p>
-                <p>Douleur mollet > 3/10 → tu arrêtes l'exercice et tu le signales au bilan du soir.</p>
-              </div>`
             : ""
         }
         <div class="button-row" style="margin-top:12px">
@@ -3481,7 +3532,7 @@
         </div>
         ${draft.error ? `<p class="presc-error">${escapeHtml(draft.error)}</p>` : ""}
         <button type="button" class="primary-button" data-action="save-prescribed-run">${icon("check")}Enregistrer la course</button>
-        <p class="small-text">Distance, allure et FC viennent de ta montre : inutile de les retaper ici. Si tu veux les saisir malgré tout, le journal des séances plus bas reste disponible.</p>
+        
       </section>
     `;
   }
@@ -3828,7 +3879,6 @@
             })
             .join("")}
         </div>
-        <p class="small-text">Ces créneaux tiennent compte de ton rythme (lever 8 h, coucher 22 h). Ce sont des repères, pas des contraintes : l'important est de les faire, pas de les faire à l'heure exacte.</p>
       </section>
     `;
   }
@@ -4079,7 +4129,7 @@
               <div class="metric-scale">
                 ${data.zones.map((zone, index) => scaleRow(zone, index === data.activeIndex)).join("")}
               </div>
-              ${data.activeIndex >= 0 ? `<p class="small-text">La ligne mise en avant est celle où tu te situes aujourd'hui.</p>` : ""}
+              ${data.activeIndex >= 0 ? `` : ""}
             </div>
             <div class="sheet-block">
               <h3>Ta cible</h3>
@@ -4269,7 +4319,7 @@
           }
         </div>
         <div class="gauge-grid">${tiles.join("")}</div>
-        <p class="small-text">Touche une tuile pour ouvrir sa fiche de lecture : l'échelle de référence, où tu te situes et la cible liée à tes objectifs.</p>
+        
       </section>
     `;
   }
@@ -4586,7 +4636,7 @@
           <div class="field full">
             <span class="label">La séance prévue a-t-elle été réalisée ?</span>
             ${QuickStatusChips(dateKey())}
-            <p class="small-text">Même déclaration que dans la Synthèse : les deux écrans écrivent au même endroit.</p>
+            
           </div>
           <div class="field">
             <label for="duration">Durée réelle</label>
@@ -4679,7 +4729,7 @@
           </div>
           ${StatusBadge(state.dataMode === "demo" ? "Démo fictive" : "Zéro donnée", state.dataMode === "demo" ? "info" : "watch")}
         </div>
-        <p class="small-text">Une donnée absente n’est jamais interprétée comme négative. Elle réduit seulement la confiance si elle est importante pour la décision.</p>
+        
         <div class="source-grid ${compact ? "compact" : ""}">
           ${sources
             .map(
@@ -5029,7 +5079,7 @@
           <div class="stat-tile"><span>Jours actifs</span><strong>${week.activeDays}/7</strong></div>
           <div class="stat-tile"><span>Pas cumulés</span><strong>${week.steps ? week.steps.toLocaleString("fr-FR") : "—"}</strong></div>
         </div>
-        <p class="small-text">La marche ne remplace pas une séance : elle soutient la dépense quotidienne et la récupération sans ajouter de fatigue neuromusculaire.</p>
+        
       </section>
     `;
   }
@@ -5058,7 +5108,7 @@
           ${
             state.imports.garmin
               ? `<p class="small-text">Dernier import : ${escapeHtml(state.imports.garmin.fileName)} · ${state.imports.garmin.count} activité(s) sur ${state.imports.garmin.days} jour(s), du ${formatFrDate(state.imports.garmin.firstDate)} au ${formatFrDate(state.imports.garmin.lastDate)}.</p>`
-              : `<p class="small-text">Séances et marches rejoignent le journal du bon jour. Ré-importer le même fichier ne crée pas de doublon.</p>`
+              : ``
           }
         </div>
         <div class="import-drop">
@@ -5068,7 +5118,7 @@
             ${icon("play")}Choisir export.xml
             <input type="file" accept=".xml,text/xml,application/xml,.zip" data-import="apple-health" />
           </label>
-          <p class="small-text">Le traitement se fait localement dans ton navigateur. Le fichier n’est envoyé nulle part.</p>
+          
         </div>
         ${
           state.imports.progress
@@ -6308,7 +6358,7 @@
             <div>
               <p class="eyebrow">Météo</p>
               <h2>Adapter la séance aux conditions</h2>
-              <p class="small-text">Chaleur, pluie et vent changent la lecture d'une séance — surtout en course. Un appui, aucune donnée personnelle envoyée.</p>
+              
             </div>
           </div>
           <div class="button-row">
@@ -6902,13 +6952,20 @@
           ${PrescriptionCard()}
           ${RunStepsCard()}
           ${RunPrescriptionCard()}
-          ${NotFullCard()}
-          ${MicroCard()}
-          ${WeatherCard()}
           ${RestDayCard()}
-          ${WorkoutLogCard()}
           ${TodayWorkoutsList()}
-          ${TodayActivitiesCard()}
+          <button type="button" class="more-toggle" data-action="toggle-more">${state.moreOpen ? "Masquer" : "Plus"} — séance allégée, mobilité, météo, saisie libre${state.moreOpen ? " ›" : " ›"}</button>
+          ${
+            state.moreOpen
+              ? `<div class="page-grid">
+                  ${NotFullCard()}
+                  ${MicroCard()}
+                  ${WeatherCard()}
+                  ${WorkoutLogCard()}
+                  ${TodayActivitiesCard()}
+                </div>`
+              : ""
+          }
         </div>
       `,
       evening: `
@@ -7287,7 +7344,7 @@
                       <strong>${escapeHtml(s ? s.title : "Hors bloc")}</strong>
                       ${d.status.label ? StatusBadge(d.status.label, d.status.tone) : ""}
                     </div>
-                    <span class="cal-focus">${escapeHtml(s ? s.focus : "Aucune séance programmée")}</span>
+                    ${isToday ? `<span class="cal-focus">${escapeHtml(s ? s.focus : "Aucune séance programmée")}</span>` : ""}
                     ${
                       rest
                         ? ""
@@ -7295,7 +7352,7 @@
                             s.rpe ? ` · RPE ${escapeHtml(String(s.rpe))}` : ""
                           }</span>`
                     }
-                    ${timeline ? `<span class="cal-micro">${escapeHtml(timeline)}</span>` : ""}
+                    ${isToday && timeline ? `<span class="cal-micro">${escapeHtml(timeline)}</span>` : ""}
                   </div>
                 </div>
               `;
@@ -7393,7 +7450,6 @@
           </div>
           ${StatusBadge(week ? `Semaine ${week} sur ${BLOC1.totalWeeks}` : "Amorce", "info")}
         </div>
-        <p class="small-text">${escapeHtml(BLOC1_INTENT.why)}</p>
         <div class="target-list">
           ${targets
             .map(
@@ -7404,7 +7460,7 @@
                   <strong>${escapeHtml(t.label)}</strong>
                   ${StatusBadge(t.target, t.tone)}
                 </div>
-                <p class="target-why">${escapeHtml(t.why)}</p>
+                ${state.intentOpen ? `<p class="target-why">${escapeHtml(t.why)}</p>` : ""}
                 <p class="target-status">${escapeHtml(t.status)}</p>
               </div>
             `
@@ -7430,8 +7486,16 @@
             ? `<div class="notice"><strong>Cette phase : ${escapeHtml(phase.label)}</strong><p>${escapeHtml(phase.weeklyGoal)}</p></div>`
             : `<div class="notice"><strong>Avant le départ</strong><p>Check-ins quotidiens pour construire la base de readiness, tour de taille de référence, et les premiers top sets pour calibrer le moteur de charges.</p></div>`
         }
-        <p class="small-text">${escapeHtml(BLOC1_INTENT.outcome)}</p>
-        <p class="small-text"><a href="${BLOC1.guideUrl}" target="_blank" rel="noopener">Guide complet du bloc → chaque exercice expliqué, avec sa vidéo de démonstration</a></p>
+        <button type="button" class="more-toggle" data-action="toggle-intent">${state.intentOpen ? "Masquer le pourquoi" : "Pourquoi ces objectifs"} ›</button>
+        ${
+          state.intentOpen
+            ? `<div class="presc-detail">
+                <p>${escapeHtml(BLOC1_INTENT.why)}</p>
+                <p>${escapeHtml(BLOC1_INTENT.outcome)}</p>
+                <p><a href="${BLOC1.guideUrl}" target="_blank" rel="noopener">Guide complet du bloc → chaque exercice expliqué, avec sa vidéo</a></p>
+              </div>`
+            : ""
+        }
       </section>
     `;
   }
@@ -8644,6 +8708,33 @@
       state.activeTodayView = todayViewButton.dataset.todayView;
       persist();
       render();
+      return;
+    }
+
+    const intentBtn = event.target.closest('[data-action="toggle-intent"]');
+    if (intentBtn) {
+      state.intentOpen = !state.intentOpen;
+      persist();
+      render();
+      return;
+    }
+
+    const moreBtn = event.target.closest('[data-action="toggle-more"]');
+    if (moreBtn) {
+      state.moreOpen = !state.moreOpen;
+      persist();
+      render();
+      return;
+    }
+
+    const focusBtn = event.target.closest('[data-action="focus-exercise"]');
+    if (focusBtn && focusBtn.dataset.name) {
+      state.focusExercise = focusBtn.dataset.name;
+      persist();
+      render();
+      // Remonter en tête de la carte : sans cela, on reste au niveau du bouton
+      // « Suivant » et le nouvel exercice s'ouvre hors écran.
+      requestAnimationFrame(() => document.querySelector(".presc-list")?.scrollIntoView({ block: "start", behavior: "smooth" }));
       return;
     }
 
