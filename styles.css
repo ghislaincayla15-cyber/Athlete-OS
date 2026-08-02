@@ -3891,3 +3891,72 @@ textarea:focus {
   padding: 5px 10px;
   border-radius: 12px;
 }
+
+/* v8.6.0 — rattrapage des séances manquées */
+.catchup-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.catchup-row {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.catchup-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.catchup-head strong {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.catchup-meta {
+  margin: 6px 0 12px;
+  font-size: 0.79rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.catchup-row .primary-button {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Pastille de compte sur l'onglet Programme */
+.nav-icon-wrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+
+.nav-dot {
+  position: absolute;
+  top: -5px;
+  right: -9px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--orange);
+  color: #1a0b00;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.mobile-nav-button.active .nav-dot {
+  background: #1a1c16;
+  color: var(--volt);
+}

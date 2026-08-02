@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "8.5.0";
+  const APP_VERSION = "8.6.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -7083,6 +7083,118 @@
     `;
   }
 
+  // ---- v8.6.0 : rattraper une séance manquée ----
+  // Deux demandes de Ghislain d'un coup. « Si j'ai loupé une séance dans la
+  // semaine, j'aimerais pouvoir quand même la réaliser un autre jour » — et,
+  // plus large : « ça manque de structure, on a du mal à trouver l'endroit où
+  // on met ce qu'on a fait ou non ». La réponse aux deux est le même écran :
+  // l'onglet Programme devient l'endroit où l'on voit sa semaine, ce qui est
+  // fait, ce qui ne l'est pas, et où l'on récupère ce qui a sauté.
+
+  // Une séance est « manquée » si elle était prescrite, qu'elle est passée,
+  // qu'aucune séance n'a été enregistrée ce jour-là, et que le bilan ne dit pas
+  // qu'elle a été faite. Une séance déclarée « manquée » au bilan compte aussi.
+  // Fenêtre à 7 jours : au-delà, la semaine est passée et rattraper reviendrait
+  // à empiler le volume de deux semaines sur une seule.
+  function missedSessions(daysBack = 7) {
+    const out = [];
+    const today = dateKey();
+    for (let i = 1; i <= daysBack; i++) {
+      const key = addDaysKey(today, -i);
+      if (!programActive(key)) continue;
+      const session = programSessionFor(key);
+      if (!session || session.kind === "repos") continue;
+      const entry = state.journal[key];
+      if ((entry?.workouts || []).length) continue; // faite, elle est au journal
+      const ev = entry?.evening;
+      if (ev?.touched && ["complete", "adaptee"].includes(ev.completion)) continue;
+      out.push({ key, session, declared: Boolean(ev?.touched) });
+    }
+    return out;
+  }
+
+  function relativeDayLabel(key) {
+    const diff = Math.round((new Date(`${dateKey()}T12:00:00`) - new Date(`${key}T12:00:00`)) / 86400000);
+    if (diff === 1) return "Hier";
+    if (diff < 7) return new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long" });
+    return `${new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long" })} dernier`;
+  }
+
+  function CatchUpCard() {
+    const missed = missedSessions();
+    const todaySession = programActive() ? programSessionFor() : null;
+    const todayBusy = Boolean(todaySession) && todaySession.kind !== "repos";
+    const todayLogged = (day().workouts || []).length > 0;
+
+    if (!missed.length) {
+      return `
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Rattrapage</p>
+              <h2>Rien à rattraper</h2>
+            </div>
+            ${StatusBadge("À jour", "good")}
+          </div>
+          <p class="small-text">Aucune séance prescrite n'est restée sans trace sur les 10 derniers jours. Une séance déclarée « partielle » ou « manquée » au bilan du soir réapparaîtra ici tant qu'elle n'aura pas été refaite.</p>
+        </section>
+      `;
+    }
+
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Action requise</p>
+            <h2>Séances manquées</h2>
+          </div>
+          ${StatusBadge(`${missed.length} en attente`, "watch")}
+        </div>
+        <p class="small-text">Rattraper une séance l'échange avec celle d'aujourd'hui : tu fais celle qui a sauté, et celle du jour reprend la place de l'autre. Rien n'est perdu, la semaine se réorganise.</p>
+        <div class="catchup-list">
+          ${missed
+            .slice(0, 3)
+            .map(
+              (item) => `
+              <article class="catchup-row">
+                <div class="catchup-head">
+                  ${StatusBadge(relativeDayLabel(item.key), missedIsRecent(item.key) ? "bad" : "watch")}
+                  <strong>${escapeHtml(item.session.title)}</strong>
+                </div>
+                <p class="catchup-meta">${escapeHtml(item.session.focus)}${item.session.duration ? ` · ${item.session.duration} min` : ""}${
+                  item.session.rpe ? ` · RPE ${escapeHtml(String(item.session.rpe))}` : ""
+                }</p>
+                ${item.declared ? `<p class="small-text">Tu l'avais déclarée non faite au bilan du soir.</p>` : ""}
+                <button type="button" class="primary-button" data-action="catch-up" data-missed-key="${escapeHtml(item.key)}">
+                  Rattraper maintenant →
+                </button>
+              </article>
+            `
+            )
+            .join("")}
+        </div>
+        ${
+          missed.length > 3
+            ? `<p class="small-text">${missed.length - 3} autre${missed.length - 3 > 1 ? "s" : ""} séance${
+                missed.length - 3 > 1 ? "s" : ""
+              } manquée${missed.length - 3 > 1 ? "s" : ""} sur la période, non listée${missed.length - 3 > 1 ? "s" : ""} volontairement. Au-delà de trois séances perdues, les rattraper toutes empilerait deux semaines de volume sur une : mieux vaut repartir proprement sur la semaine en cours et laisser le reste derrière.</p>`
+            : ""
+        }
+        <p class="small-text">${
+          todayLogged
+            ? "⚠️ Tu as déjà enregistré une séance aujourd'hui. Rattraper en plus ferait deux séances dans la même journée — c'est rarement une bonne idée en déficit calorique. Préfère demain."
+            : todayBusy
+              ? `Aujourd'hui, « ${escapeHtml(todaySession.title)} » est prévue. Si tu rattrapes, elle prendra la place du jour manqué et tu la feras à sa date.`
+              : "Aujourd'hui est un jour de repos : c'est le meilleur moment pour rattraper, sans rien décaler d'autre."
+        }</p>
+      </section>
+    `;
+  }
+
+  function missedIsRecent(key) {
+    return Math.round((new Date(`${dateKey()}T12:00:00`) - new Date(`${key}T12:00:00`)) / 86400000) <= 2;
+  }
+
   function renderRealProgram() {
     const week = programWeek();
     const phase = programPhase(week);
@@ -7094,6 +7206,8 @@
     // l'intention du bloc et l'état réel de chaque objectif.
     const overview = `
       <div class="section-grid">
+        ${CatchUpCard()}
+        ${WeekCalendarCard()}
         ${BlocIntentCard()}
         ${
           upcoming
@@ -7109,7 +7223,6 @@
               </section>`
             : ""
         }
-        ${WeekCalendarCard()}
         ${
           stats.planned
             ? ProgressRing({
@@ -7718,11 +7831,17 @@
   }
 
   function renderNav(kind = "desktop") {
+    // v8.6.0 : le nombre de séances à rattraper s'affiche sur l'onglet
+    // Programme. Ghislain ne trouvait pas « où on met ce qu'on a fait ou non » ;
+    // désormais le manque se voit sans ouvrir quoi que ce soit.
+    const missed = programActive() ? missedSessions().length : 0;
     return tabs
       .map(
         (tab) => `
           <button type="button" class="${kind === "mobile" ? "mobile-nav-button" : "nav-button"} ${state.activeTab === tab.id ? "active" : ""}" data-tab="${tab.id}">
-            ${icon(tab.icon)}
+            <span class="nav-icon-wrap">${icon(tab.icon)}${
+              tab.id === "program" && missed ? `<span class="nav-dot" aria-label="${missed} séance(s) à rattraper">${missed}</span>` : ""
+            }</span>
             <span>${escapeHtml(tab.label)}</span>
           </button>
         `
@@ -8109,6 +8228,37 @@
     }
     if (action === "request-adaptation") {
       day().adaptationPending = true;
+    }
+    if (action === "catch-up") {
+      const missedKey = actionButton.dataset.missedKey;
+      const todayKey = dateKey();
+      if (missedKey && missedKey !== todayKey) {
+        const missedTitle = programSessionFor(missedKey)?.title || "Séance";
+        const todayTitle = programSessionFor(todayKey)?.title || "Repos";
+        state.program.swaps = state.program.swaps || {};
+        const todayEff = effectiveWeekday(todayKey);
+        const missedEff = effectiveWeekday(missedKey);
+        // Échange strict : la séance manquée vient aujourd'hui, celle du jour
+        // prend sa date. Le volume de la semaine reste le même.
+        state.program.swaps[todayKey] = missedEff;
+        state.program.swaps[missedKey] = todayEff;
+        if (state.program.swaps[todayKey] === actualWeekday(todayKey)) delete state.program.swaps[todayKey];
+        if (state.program.swaps[missedKey] === actualWeekday(missedKey)) delete state.program.swaps[missedKey];
+        state.sessionDraft = null; // les charges se recalculent pour la nouvelle séance
+        state.activeTab = "today";
+        state.activeTodayView = "workout";
+        logDecision(
+          "rattrapage",
+          `« ${missedTitle} » du ${formatShortDate(missedKey)} rattrapée aujourd'hui (échange avec « ${todayTitle} »)`,
+          "Demande de l'athlète",
+          "Saisie manuelle",
+          "Eleve"
+        );
+        addCoachMessage(
+          "coach",
+          `« ${missedTitle} » est maintenant la séance du jour. Les charges sont recalculées depuis tes derniers top sets. « ${todayTitle} » a pris la date du ${formatShortDate(missedKey)} — le volume de la semaine est inchangé.`
+        );
+      }
     }
     if (action === "open-move-session") {
       state.movePickerOpen = true;
