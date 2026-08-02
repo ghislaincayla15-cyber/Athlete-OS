@@ -1,15 +1,25 @@
 (function () {
-  const APP_VERSION = "8.8.0";
+  const APP_VERSION = "9.0.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
 
+  // v9.0.0 : cinq onglets, repris de la maquette Stitch. Ghislain ne trouvait
+  // pas « où on met ce qu'on a fait ou non » : « Rattraper » devient un onglet
+  // à part entière au lieu d'une carte enfouie dans Programme, et il réunit
+  // les trois endroits qui répondaient à cette question (séances manquées,
+  // calendrier, historique). Performances et Export passent sous Profil.
   const tabs = [
     { id: "today", label: "Aujourd’hui", icon: "activity" },
     { id: "program", label: "Programme", icon: "calendar" },
-    { id: "performance", label: "Performances", icon: "chart" },
+    { id: "catchup", label: "Rattraper", icon: "history" },
     { id: "health", label: "Santé", icon: "heart" },
-    { id: "export", label: "Export", icon: "chart" },
+    { id: "profile", label: "Profil", icon: "user" },
+  ];
+
+  const profileViews = [
+    { id: "performance", label: "Progression" },
+    { id: "export", label: "Export" },
   ];
 
   const pageCopy = {
@@ -21,9 +31,17 @@
       title: "Bloc d’entraînement",
       subtitle: "Un bloc fixe de 10 semaines avec calendrier, deload, adhérence et historique des adaptations.",
     },
+    catchup: {
+      title: "Rattraper",
+      subtitle: "Ce que tu as fait, ce que tu n’as pas fait, et comment le reprendre sans casser la semaine.",
+    },
     performance: {
       title: "Performances",
       subtitle: "Progression musculation, running, stagnations et score de performance du bloc.",
+    },
+    profile: {
+      title: "Profil & progression",
+      subtitle: "Tes objectifs, ta progression sur le bloc et l’export à transmettre au coach.",
     },
     health: {
       title: "Santé & forme",
@@ -49,7 +67,6 @@
     { id: "summary", label: "Synthèse" },
     { id: "checkin", label: "Check-in" },
     { id: "evening", label: "Bilan" },
-    { id: "history", label: "Historique" },
     { id: "data", label: "Données" },
   ];
 
@@ -131,6 +148,8 @@
     lastSavedAt: null,
     activeTab: "today",
     activeTodayView: "workout",
+    activeProfileView: "performance",
+    calendarOffset: 0,
     theme: "dark",
     uiVersion: 2,
     settingsOpen: false,
@@ -1853,6 +1872,10 @@
       tune: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
       send: '<path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7Z"/>',
       check: '<path d="m20 6-11 11-5-5"/>',
+      history:
+        '<path d="M3 3v6h6"/><path d="M3.5 9a9 9 0 1 0 2.1-3.4L3 9"/><path d="M12 7v5l4 2"/>',
+      user:
+        '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
       alert: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.3 18a2 2 0 0 0 1.7 3h16a2 2 0 0 0 1.7-3l-8-14.1a2 2 0 0 0-3.4 0Z"/>',
     };
     return `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.activity}</svg>`;
@@ -3263,6 +3286,25 @@
     `;
   }
 
+  // v9.0.0 : « exercice n sur N » et l'avancement en séries, repris de la
+  // maquette. Pendant la séance, la question est « où j'en suis », pas « quel
+  // est le plan » — le plan est déjà lisible plus bas.
+  function SessionProgressBar(items) {
+    const total = items.reduce((sum, item) => sum + seriesOf(item.name).length, 0);
+    const done = items.reduce((sum, item) => sum + seriesDone(item.name).length, 0);
+    const currentIdx = items.findIndex((item) => seriesDone(item.name).length < seriesOf(item.name).length);
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    return `
+      <div class="session-progress">
+        <div class="session-progress-head">
+          <span>${currentIdx >= 0 ? `Exercice ${currentIdx + 1} sur ${items.length}` : `${items.length} exercices terminés`}</span>
+          <strong>${pct} %</strong>
+        </div>
+        <div class="session-progress-track"><i style="width:${pct}%"></i></div>
+      </div>
+    `;
+  }
+
   function PrescriptionCard(key = dateKey()) {
     const items = prescriptionFor(key);
     if (!items.length) return "";
@@ -3300,6 +3342,7 @@
           <span>RPE cible <b>${escapeHtml(isDeloadWeek ? "≤ 6 (deload)" : String(session?.rpe ?? "—"))}</b></span>
           <span><b>${items.length}</b> exercice${items.length > 1 ? "s" : ""}</span>
         </div>
+        ${SessionProgressBar(items)}
         <p class="small-text">Les charges sont calculées depuis tes dernières séances et la double progression du bloc. Corrige uniquement ce qui a différé, et renseigne le RPE réel — c'est lui qui pilote la séance suivante.</p>
         <div class="presc-list">
           ${items
@@ -5951,6 +5994,23 @@
     `;
   }
 
+  // v9.0.0 : la rangée de puces sous le titre de la fiche — catégorie
+  // musculaire primaire puis secondaires, comme dans la maquette.
+  function MuscleTags(name) {
+    const m = musclesOf(name);
+    if (!m) return "";
+    const label = (ids) => [...new Set(ids.map((id) => BODY_REGIONS[id]?.label).filter(Boolean))];
+    const primary = label(m.primary);
+    const secondary = label(m.secondary).filter((l) => !primary.includes(l));
+    if (!primary.length && !secondary.length) return "";
+    return `
+      <div class="muscle-tags">
+        ${primary.map((l) => `<span class="muscle-tag primary">${escapeHtml(l)}</span>`).join("")}
+        ${secondary.map((l) => `<span class="muscle-tag">${escapeHtml(l)}</span>`).join("")}
+      </div>
+    `;
+  }
+
   // Puce compacte sur la ligne d'exercice, comme dans la maquette.
   function MuscleChip(name) {
     const m = musclesOf(name);
@@ -6025,6 +6085,18 @@
           </div>
           ${prescription ? `<p class="sheet-rx">${escapeHtml(prescription)}</p>` : ""}
           <div class="sheet-body">
+            ${MuscleTags(name)}
+            ${
+              sheet.videos.length
+                ? `<a class="media-tile" href="${escapeHtml(sheet.videos[0].url)}" target="_blank" rel="noopener">
+                    <span class="media-play">${icon("play")}</span>
+                    <span class="media-text">
+                      <strong>${escapeHtml(sheet.videos[0].label)}</strong>
+                      <span>Démonstration en vidéo · s'ouvre dans un nouvel onglet</span>
+                    </span>
+                  </a>`
+                : ""
+            }
             ${MuscleBlock(name)}
             <div class="sheet-block">
               <h3>Exécution</h3>
@@ -6039,9 +6111,12 @@
                 : ""
             }
             ${
-              sheet.videos.length
+              // v9.0.0 : la première vidéo est déjà en tuile en haut de fiche.
+              // On ne liste ici que les éventuelles suivantes.
+              sheet.videos.length > 1
                 ? `<div class="sheet-videos">
                     ${sheet.videos
+                      .slice(1)
                       .map((video) => `<a class="secondary-button" href="${escapeHtml(video.url)}" target="_blank" rel="noopener">▶ ${escapeHtml(video.label)}</a>`)
                       .join("")}
                   </div>`
@@ -6842,12 +6917,6 @@
           ${NutritionCard()}
         </div>
       `,
-      history: `
-        <div class="page-grid">
-          ${HistoryTrendsCard()}
-          ${HistoryList()}
-        </div>
-      `,
       data: `
         <div class="page-grid">
           ${renderImportPanel()}
@@ -7490,7 +7559,6 @@
     // l'intention du bloc et l'état réel de chaque objectif.
     const overview = `
       <div class="section-grid">
-        ${CatchUpCard()}
         ${WeekCalendarCard()}
         ${BlocIntentCard()}
         ${
@@ -7549,6 +7617,283 @@
             }
           </div>
         </section>
+      </div>
+    `;
+  }
+
+
+  // ---- v9.0.0 : l'onglet « Rattraper » ------------------------------------
+  // Trois réponses à une seule question — « qu'est-ce que j'ai fait, et
+  // qu'est-ce que je n'ai pas fait » : les séances manquées à reprendre, le
+  // mois vu d'un coup d'œil, puis le détail chronologique.
+
+  function monthGrid(offset = 0) {
+    const base = new Date(`${dateKey()}T12:00:00`);
+    const first = new Date(base.getFullYear(), base.getMonth() + offset, 1, 12);
+    const label = first.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    const lead = (first.getDay() + 6) % 7; // lundi en tête
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(first.getFullYear(), first.getMonth(), d, 12);
+      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      cells.push({ key, day: d });
+    }
+    return { label, cells, first };
+  }
+
+  // L'état d'un jour, en une seule règle lisible. `touched` est obligatoire :
+  // sans lui, une valeur par défaut se ferait passer pour une déclaration
+  // (le bug déjà commis trois fois avant la v8.1.1).
+  function dayStatus(key) {
+    const today = dateKey();
+    const entry = state.journal[key];
+    const logged = (entry?.workouts || []).length > 0;
+    if (logged) return { tone: "done", label: "Faite" };
+    if (!programActive(key)) return { tone: "off", label: "Hors bloc" };
+    const session = programSessionFor(key);
+    if (!session || session.kind === "repos") return { tone: "rest", label: "Repos" };
+    const ev = entry?.evening;
+    if (ev?.touched && ["complete", "adaptee"].includes(ev.completion)) return { tone: "done", label: "Déclarée faite" };
+    if (ev?.touched && ev.completion === "none") return { tone: "missed", label: "Déclarée non faite" };
+    if (key > today) return { tone: "future", label: "À venir" };
+    if (key === today) return { tone: "today", label: "Aujourd’hui" };
+    return { tone: "missed", label: "Sans trace" };
+  }
+
+  function MonthCalendarCard() {
+    const offset = state.calendarOffset || 0;
+    const { label, cells } = monthGrid(offset);
+    const today = dateKey();
+    let done = 0;
+    let missed = 0;
+    cells.forEach((cell) => {
+      if (!cell) return;
+      const st = dayStatus(cell.key);
+      if (st.tone === "done") done++;
+      if (st.tone === "missed") missed++;
+    });
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Vue d’ensemble</p>
+            <h2>Le mois d’un coup d’œil</h2>
+          </div>
+          <div class="cal-nav">
+            <button type="button" class="icon-button" data-action="cal-shift" data-delta="-1" aria-label="Mois précédent">‹</button>
+            <button type="button" class="icon-button" data-action="cal-shift" data-delta="1" aria-label="Mois suivant" ${offset >= 0 ? "disabled" : ""}>›</button>
+          </div>
+        </div>
+        <p class="month-title">${escapeHtml(label)}</p>
+        <div class="month-grid">
+          ${["L", "M", "M", "J", "V", "S", "D"].map((d) => `<span class="month-dow">${d}</span>`).join("")}
+          ${cells
+            .map((cell) => {
+              if (!cell) return `<span class="month-cell empty"></span>`;
+              const st = dayStatus(cell.key);
+              return `<span class="month-cell ${st.tone} ${cell.key === today ? "is-today" : ""}" title="${escapeHtml(st.label)}"><b>${cell.day}</b><i></i></span>`;
+            })
+            .join("")}
+        </div>
+        <div class="month-legend">
+          <span><i class="dot done"></i>Faite (${done})</span>
+          <span><i class="dot missed"></i>Manquée (${missed})</span>
+          <span><i class="dot rest"></i>Repos</span>
+        </div>
+        <p class="small-text">Une séance compte comme faite dès qu’elle est enregistrée, ou déclarée complète ou écourtée au bilan du soir. Les jours sans aucune trace restent en orange : ce sont ceux à reprendre ci-dessus.</p>
+      </section>
+    `;
+  }
+
+  function renderCatchUp() {
+    if (!programStartDate()) {
+      return BlankDataPage({
+        eyebrow: "Rattraper",
+        title: "Aucun programme chargé",
+        copy: "Les séances manquées, le calendrier du mois et l’historique apparaîtront dès que ton bloc sera actif.",
+        next: "Créer ton bloc de 8 à 12 semaines",
+      });
+    }
+    return `
+      <div class="page-grid">
+        ${CatchUpCard()}
+        ${MonthCalendarCard()}
+        ${HistoryTrendsCard()}
+        ${HistoryList()}
+      </div>
+    `;
+  }
+
+  // ---- v9.0.0 : charge musculaire de la semaine ---------------------------
+  // Calculée depuis les séries réellement enregistrées, jamais depuis la
+  // prescription : c'est ce que tu as fait qui compte, pas ce qui était prévu.
+
+  const MUSCLE_MAP_GROUPS = [
+    { id: "pecs", label: "Pectoraux", regions: ["pectoraux"] },
+    { id: "dos", label: "Dos", regions: ["dorsaux", "trapezes"] },
+    { id: "epaules", label: "Épaules", regions: ["epaules"] },
+    { id: "bras", label: "Bras", regions: ["biceps", "triceps", "avantbras"] },
+    { id: "tronc", label: "Tronc", regions: ["abdos", "obliques", "lombaires"] },
+    { id: "jambes", label: "Jambes", regions: ["quadriceps", "ischios", "fessiers", "adducteurs", "mollets", "mollets_front"] },
+  ];
+
+  function weeklyMuscleLoad(days = 7) {
+    const byRegion = {};
+    const today = dateKey();
+    let sessions = 0;
+    for (let i = 0; i < days; i++) {
+      const key = addDaysKey(today, -i);
+      const workouts = (state.journal[key]?.workouts || []).filter((w) => w.type === "muscu");
+      if (workouts.length) sessions++;
+      workouts.forEach((workout) => {
+        (workout.exercises || []).forEach((exercise) => {
+          const m = musclesOf(exercise.name);
+          if (!m) return;
+          const sets = Number(exercise.sets) || 1;
+          m.primary.forEach((id) => { byRegion[id] = (byRegion[id] || 0) + sets; });
+          // Le travail en soutien compte pour moitié : il stimule sans être le
+          // moteur du mouvement. Convention explicite, pas une mesure.
+          m.secondary.forEach((id) => { byRegion[id] = (byRegion[id] || 0) + sets * 0.5; });
+        });
+      });
+    }
+    const groups = MUSCLE_MAP_GROUPS.map((group) => {
+      const sets = group.regions.reduce((sum, id) => sum + (byRegion[id] || 0), 0);
+      return { ...group, sets: Math.round(sets * 10) / 10 };
+    });
+    return { byRegion, groups, sessions };
+  }
+
+  // Silhouette graduée : l'opacité suit la charge relative. Une région sans
+  // série reste au trait, comme le reste du corps.
+  function MuscleHeatMap(byRegion) {
+    const max = Math.max(1, ...Object.values(byRegion));
+    const shapes = Object.keys(byRegion)
+      .filter((id) => BODY_REGIONS[id] && byRegion[id] > 0)
+      .map((id) => {
+        const ratio = Math.min(1, byRegion[id] / max);
+        return `<g class="muscle-heat" style="opacity:${(0.25 + ratio * 0.75).toFixed(2)}">${BODY_REGIONS[id].shape}</g>`;
+      })
+      .join("");
+    return `
+      <svg class="muscle-map wide" viewBox="0 0 220 205" role="img" aria-label="Charge musculaire de la semaine">
+        ${BODY_SILHOUETTE}
+        ${shapes}
+        <text x="55" y="203" class="muscle-caption">face</text>
+        <text x="165" y="203" class="muscle-caption">dos</text>
+      </svg>
+    `;
+  }
+
+  function WeeklyMuscleLoadCard() {
+    const { byRegion, groups, sessions } = weeklyMuscleLoad(7);
+    const total = groups.reduce((sum, g) => sum + g.sets, 0);
+    if (!total) {
+      return `
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Charge musculaire</p>
+              <h2>Ce que tu as réellement travaillé</h2>
+            </div>
+            ${StatusBadge("Aucune séance sur 7 jours", "watch")}
+          </div>
+          <div class="empty-state">
+            <strong>Rien à afficher pour l’instant</strong>
+            <p>Cette carte se remplit à partir des séries que tu valides en séance. Elle ne lit jamais la prescription : seul ce qui est enregistré compte.</p>
+            <button type="button" class="secondary-button" data-goto="today:workout">Ouvrir la séance du jour</button>
+          </div>
+        </section>
+      `;
+    }
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Charge musculaire · 7 jours</p>
+            <h2>Ce que tu as réellement travaillé</h2>
+          </div>
+          ${StatusBadge(`${sessions} séance${sessions > 1 ? "s" : ""} · ${frNumber(total, 0)} séries`, "good")}
+        </div>
+        <div class="workload-grid">
+          ${MuscleHeatMap(byRegion)}
+          <div class="workload-bars">
+            ${groups
+              .map((group) => {
+                const pct = Math.min(100, Math.round((group.sets / 20) * 100));
+                const tone = group.sets >= 10 ? "good" : group.sets > 0 ? "watch" : "bad";
+                return `
+                  <div class="workload-row">
+                    <div class="workload-head">
+                      <span>${escapeHtml(group.label)}</span>
+                      <strong class="${tone}">${frNumber(group.sets, group.sets % 1 ? 1 : 0)} séries</strong>
+                    </div>
+                    <div class="workload-track"><i class="${tone}" style="width:${pct}%"></i></div>
+                  </div>
+                `;
+              })
+              .join("")}
+          </div>
+        </div>
+        <p class="small-text">Repère de volume : 10 à 20 séries par groupe et par semaine pour progresser en hypertrophie. Le travail en soutien compte pour une demi-série — c'est une convention d'affichage, pas une mesure.</p>
+      </section>
+    `;
+  }
+
+  // ---- v9.0.0 : l'onglet Profil ------------------------------------------
+  function ProfileHeaderCard() {
+    const week = programWeek();
+    const { groups, sessions } = weeklyMuscleLoad(7);
+    const totalSets = groups.reduce((sum, g) => sum + g.sets, 0);
+    const objectives = [
+      "Conserver et développer la masse musculaire",
+      "Réduire progressivement la masse grasse",
+      "Développer les qualités athlétiques",
+      "Améliorer les performances en course",
+      "Préserver la santé articulaire",
+    ];
+    return `
+      <section class="card profile-card">
+        <div class="profile-top">
+          <div class="profile-mark">AO</div>
+          <div>
+            <h2>Athlète</h2>
+            <p class="small-text">${ATHLETE.heightCm} cm · niveau intermédiaire · 4 à 5 séances de musculation et 2 courses par semaine</p>
+          </div>
+        </div>
+        <div class="profile-stats">
+          <div><span>Bloc en cours</span><strong>${week ? `S${week}/${BLOC1.totalWeeks}` : "—"}</strong></div>
+          <div><span>Séances · 7 j</span><strong>${sessions}</strong></div>
+          <div><span>Séries · 7 j</span><strong>${frNumber(totalSets, 0)}</strong></div>
+          <div><span>Version</span><strong>v${APP_VERSION}</strong></div>
+        </div>
+        <p class="sheet-label">Objectifs, par ordre de priorité</p>
+        <ol class="profile-goals">
+          ${objectives.map((o) => `<li>${escapeHtml(o)}</li>`).join("")}
+        </ol>
+      </section>
+    `;
+  }
+
+  function renderProfile() {
+    const subnav = `
+      <div class="today-subnav" role="tablist" aria-label="Vues Profil">
+        ${profileViews
+          .map(
+            (view) =>
+              `<button type="button" class="today-subnav-button ${state.activeProfileView === view.id ? "active" : ""}" data-profile-view="${view.id}">${escapeHtml(view.label)}</button>`
+          )
+          .join("")}
+      </div>
+    `;
+    const pane = state.activeProfileView === "export" ? renderExport() : renderPerformance();
+    return `
+      <div class="page-grid">
+        ${subnav}
+        ${ProfileHeaderCard()}
+        ${pane}
       </div>
     `;
   }
@@ -7704,6 +8049,7 @@
       const health = state.imports.health;
       return `
         <div class="page-grid">
+          ${WeeklyMuscleLoadCard()}
           <section class="card">
             <div class="card-head">
               <div>
@@ -7751,12 +8097,19 @@
       `;
     }
 
-    return BlankDataPage({
-      eyebrow: "Santé & forme",
-      title: "Aucune tendance long terme",
-      copy: "Poids, tour de taille, HRV, sommeil, FC repos et VO2 estimée resteront vides tant que tes données Apple Santé/Garmin ne sont pas importées.",
-      next: "Importer Apple Santé",
-    });
+    // v9.0.0 : la charge musculaire ne dépend d'aucun import — elle vient des
+    // séries validées en séance. Elle reste donc affichée même sans Apple Santé.
+    return `
+      <div class="page-grid">
+        ${WeeklyMuscleLoadCard()}
+        ${BlankDataPage({
+          eyebrow: "Santé & forme",
+          title: "Aucune tendance long terme",
+          copy: "Poids, tour de taille, HRV, sommeil, FC repos et VO2 estimée resteront vides tant que tes données Apple Santé/Garmin ne sont pas importées.",
+          next: "Importer Apple Santé",
+        })}
+      </div>
+    `;
   }
 
   // ---- Briefing texte : ce que l'athlète transmet au coach (Claude) ----
@@ -8108,9 +8461,13 @@
 
   function renderContent() {
     if (state.activeTab === "program") return renderProgram();
-    if (state.activeTab === "performance") return renderPerformance();
+    if (state.activeTab === "catchup") return renderCatchUp();
     if (state.activeTab === "health") return renderHealth();
-    if (state.activeTab === "export") return renderExport();
+    if (state.activeTab === "profile") return renderProfile();
+    // Anciens identifiants d'onglets : un état sauvegardé en v8 peut encore
+    // les porter, et quelques raccourcis internes y pointent.
+    if (state.activeTab === "performance") { state.activeProfileView = "performance"; return renderProfile(); }
+    if (state.activeTab === "export") { state.activeProfileView = "export"; return renderProfile(); }
     return renderToday();
   }
 
@@ -8124,7 +8481,7 @@
         (tab) => `
           <button type="button" class="${kind === "mobile" ? "mobile-nav-button" : "nav-button"} ${state.activeTab === tab.id ? "active" : ""}" data-tab="${tab.id}">
             <span class="nav-icon-wrap">${icon(tab.icon)}${
-              tab.id === "program" && missed ? `<span class="nav-dot" aria-label="${missed} séance(s) à rattraper">${missed}</span>` : ""
+              tab.id === "catchup" && missed ? `<span class="nav-dot" aria-label="${missed} séance(s) à rattraper">${missed}</span>` : ""
             }</span>
             <span>${escapeHtml(tab.label)}</span>
           </button>
@@ -8248,7 +8605,7 @@
   let lastViewSignature = "";
 
   function maybeAnimateDonuts() {
-    const signature = `${state.activeTab}:${state.activeTodayView}:${state.dataMode}`;
+    const signature = `${state.activeTab}:${state.activeTodayView}:${state.activeProfileView}:${state.dataMode}`;
     if (signature === lastViewSignature) return;
     lastViewSignature = signature;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
@@ -8285,6 +8642,23 @@
     const todayViewButton = event.target.closest("[data-today-view]");
     if (todayViewButton) {
       state.activeTodayView = todayViewButton.dataset.todayView;
+      persist();
+      render();
+      return;
+    }
+
+    const calShift = event.target.closest('[data-action="cal-shift"]');
+    if (calShift) {
+      const next = (state.calendarOffset || 0) + Number(calShift.dataset.delta || 0);
+      state.calendarOffset = Math.min(0, Math.max(-11, next));
+      persist();
+      render();
+      return;
+    }
+
+    const profileViewButton = event.target.closest("[data-profile-view]");
+    if (profileViewButton) {
+      state.activeProfileView = profileViewButton.dataset.profileView;
       persist();
       render();
       return;

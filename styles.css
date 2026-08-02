@@ -4255,3 +4255,332 @@ textarea:focus {
   .muscle-grid { grid-template-columns: 1fr; }
   .muscle-map { max-width: 220px; margin: 0 auto; }
 }
+
+/* ==========================================================================
+   v9.0.0 — reprise de la maquette Stitch : navigation à cinq onglets,
+   onglet Rattraper, charge musculaire, profil, séance active.
+   ========================================================================== */
+
+/* --- Séance active : avancement en tête ---------------------------------- */
+.session-progress { margin: 14px 0 4px; }
+
+.session-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.session-progress-head strong {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+  color: var(--volt);
+}
+
+.session-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(163, 230, 53, 0.16);
+  overflow: hidden;
+}
+
+.session-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--volt);
+  transition: width 0.35s ease;
+}
+
+/* Steppers plus imposants pendant la série en cours : lisibles à bout de bras,
+   utilisables avec des mains moites. */
+.series-row.current .stepper-row { grid-template-columns: 48px minmax(0, 1fr) 48px; gap: 6px; }
+.series-row.current .stepper-row button { height: 52px; font-size: 1.45rem; }
+.series-row.current .stepper-row input { height: 52px; font-size: 1.9rem; }
+.series-row.current .rpe-chip { min-height: 44px; font-size: 1rem; }
+.series-row.current .series-validate { margin-top: 14px; min-height: 52px; font-size: 1rem; letter-spacing: 0.04em; }
+
+/* --- Fiche exercice : tuile vidéo et puces musculaires -------------------- */
+.media-tile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  color: inherit;
+  text-decoration: none;
+}
+
+.media-tile:hover { border-color: var(--volt); }
+
+.media-play {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  background: var(--volt);
+  color: var(--volt-ink);
+}
+
+.media-play svg { width: 22px; height: 22px; fill: currentColor; stroke: none; }
+
+.media-text strong { display: block; font-size: 0.95rem; }
+.media-text span { font-size: 0.78rem; color: var(--muted); }
+
+.muscle-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.muscle-tag {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.muscle-tag.primary {
+  border-color: rgba(163, 230, 53, 0.5);
+  background: var(--green-soft);
+  color: var(--volt);
+}
+
+/* Silhouette : un halo discret sur les moteurs, comme sur les rendus de la
+   maquette. Pas d'ombre portée — la profondeur passe par la couleur. */
+.muscle-map .muscle-primary {
+  filter: drop-shadow(0 0 6px rgba(163, 230, 53, 0.55));
+}
+
+.muscle-map .muscle-heat { fill: var(--volt); }
+.muscle-map.wide { width: 100%; max-width: 320px; }
+
+/* --- Charge musculaire de la semaine ------------------------------------- */
+.workload-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.workload-bars { display: grid; gap: 12px; }
+
+.workload-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+  font-size: 0.8rem;
+}
+
+.workload-head strong {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.workload-head strong.good { color: var(--volt); }
+.workload-head strong.watch { color: var(--orange); }
+.workload-head strong.bad { color: var(--muted); }
+
+.workload-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+body.light .workload-track { background: rgba(0, 0, 0, 0.07); }
+
+.workload-track i { display: block; height: 100%; border-radius: 999px; }
+.workload-track i.good { background: var(--volt); }
+.workload-track i.watch { background: var(--orange); }
+.workload-track i.bad { background: var(--muted); }
+
+/* --- Onglet Rattraper : le mois d'un coup d'œil --------------------------- */
+.cal-nav { display: flex; gap: 6px; }
+.cal-nav .icon-button:disabled { opacity: 0.35; cursor: default; }
+
+.month-title {
+  margin: 12px 0 8px;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+
+.month-dow {
+  padding-bottom: 4px;
+  text-align: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.month-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: var(--surface-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.month-cell.empty { background: none; }
+.month-cell b { font-weight: 600; }
+
+.month-cell i {
+  position: absolute;
+  bottom: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.month-cell.done { color: var(--text); }
+.month-cell.done i { background: var(--volt); }
+.month-cell.missed { color: var(--orange); }
+.month-cell.missed i { background: var(--orange); }
+.month-cell.rest i { background: rgba(255, 255, 255, 0.22); }
+.month-cell.today { border-color: var(--volt); color: var(--text); }
+.month-cell.is-today { border-color: var(--volt); }
+.month-cell.future { opacity: 0.55; }
+.month-cell.off { opacity: 0.3; }
+
+.month-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.month-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.month-legend .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.month-legend .dot.done { background: var(--volt); }
+.month-legend .dot.missed { background: var(--orange); }
+.month-legend .dot.rest { background: rgba(255, 255, 255, 0.22); }
+
+/* --- Onglet Profil -------------------------------------------------------- */
+.profile-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.profile-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: var(--volt);
+  color: var(--volt-ink);
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.profile-top h2 { margin: 0 0 2px; }
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.profile-stats > div {
+  padding: 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  text-align: center;
+}
+
+.profile-stats span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.profile-stats strong {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-goals {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.profile-goals li::marker { color: var(--volt); font-weight: 700; }
+
+@media (max-width: 720px) {
+  .workload-grid { grid-template-columns: 1fr; }
+  .muscle-map.wide { margin: 0 auto; }
+  .profile-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Correctifs de relecture v9.0.0 — vus à l'écran, pas dans les tests. */
+
+/* Le carré d'initiales du profil se faisait comprimer par le texte à côté. */
+.profile-mark { flex: 0 0 52px; }
+
+/* Sur un téléphone, deux steppers côte à côte ne laissaient qu'une dizaine de
+   pixels au nombre : la charge saisie devenait illisible. Un stepper par ligne,
+   pleine largeur — c'est le chiffre qui doit sauter aux yeux pendant la série. */
+@media (max-width: 520px) {
+  .series-row.current .stepper-grid { grid-template-columns: 1fr; gap: 12px; }
+  .series-row.current .stepper-row { grid-template-columns: 56px minmax(0, 1fr) 56px; gap: 8px; }
+  .series-row.current .stepper-row button { height: 54px; font-size: 1.5rem; }
+  .series-row.current .stepper-row input { height: 54px; font-size: 2.1rem; }
+}
