@@ -3960,3 +3960,298 @@ textarea:focus {
   background: #1a1c16;
   color: var(--volt);
 }
+
+/* v8.7.0 — saisie série par série (maquette Kinetic Performance) */
+.series-block { margin-top: 14px; }
+
+.series-label {
+  margin: 0 0 8px;
+  font-family: var(--font);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.series-list { display: grid; gap: 8px; }
+
+.series-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.series-row.done {
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.series-row.done:hover { opacity: 0.85; }
+
+.series-row.current {
+  display: block;
+  border-color: var(--volt);
+  background: var(--surface-muted);
+}
+
+.series-head {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.series-mark {
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.series-mark.active { color: var(--volt); }
+.series-row.done .series-mark { color: var(--volt); }
+
+.series-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.series-value {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.series-focus {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--volt);
+}
+
+.stepper-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stepper-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stepper-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 4px;
+}
+
+.stepper-row button {
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stepper-row button:hover { border-color: var(--volt); }
+
+.stepper-row input {
+  height: 44px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 2px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Chrome/Safari : masquer les flèches natives, les steppers font le travail. */
+.stepper-row input::-webkit-outer-spin-button,
+.stepper-row input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepper-row input[type="number"] { -moz-appearance: textfield; }
+
+.rpe-row { margin-top: 12px; }
+
+.rpe-chips {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.rpe-chip {
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rpe-chip.active {
+  background: var(--volt);
+  border-color: var(--volt);
+  color: var(--volt-ink);
+}
+
+.series-validate {
+  width: 100%;
+  margin-top: 12px;
+  justify-content: center;
+  font-size: 0.95rem;
+}
+
+.series-shortcut {
+  width: 100%;
+  margin-top: 10px;
+  font-size: 0.78rem;
+}
+
+/* v8.8.0 — muscles sollicités et schéma corporel */
+.muscle-block {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.sheet-label {
+  margin: 0 0 10px;
+  font-family: var(--font);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.muscle-grid {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.muscle-map {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.muscle-map .body-outline {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: var(--line-strong);
+  stroke-width: 0.8;
+}
+
+.muscle-map .muscle-secondary { fill: rgba(163, 230, 53, 0.3); }
+.muscle-map .muscle-primary { fill: var(--volt); }
+
+.muscle-map .muscle-caption {
+  fill: var(--muted);
+  font-family: var(--font);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-anchor: middle;
+  text-transform: uppercase;
+}
+
+.muscle-legend {
+  display: grid;
+  gap: 12px;
+  align-content: center;
+}
+
+.muscle-legend strong {
+  font-family: var(--font);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.muscle-legend p {
+  margin: 3px 0 0;
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+
+.muscle-key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.muscle-key.primary { background: var(--volt); }
+.muscle-key.secondary { background: rgba(163, 230, 53, 0.3); }
+
+.muscle-feel {
+  margin: 14px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--volt);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.muscle-feel strong {
+  font-family: var(--font);
+  font-weight: 700;
+  color: var(--volt);
+}
+
+/* Puce compacte sur la ligne d'exercice */
+.muscle-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@media (max-width: 420px) {
+  .muscle-grid { grid-template-columns: 1fr; }
+  .muscle-map { max-width: 220px; margin: 0 auto; }
+}

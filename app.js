@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "8.6.0";
+  const APP_VERSION = "8.8.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -2930,6 +2930,7 @@
           reps: item.spec.repsMax ?? "",
           sets: item.spec.sets ?? "",
           rpe: "",
+          series: blankSeries(item), // v8.7.0
         };
       });
       state.sessionDraft = { key, rows, openWarmup: "", error: "" };
@@ -3127,6 +3128,141 @@
     return `${clean}/4 séances ${PLYO_TIER_LABEL[target]} propres. Encore ${missing} avant d'envisager le palier suivant.`;
   }
 
+  // ---- v8.7.0 : saisie série par série ----
+  // Reprise de la maquette Stitch, avec une différence assumée : pas de « mode
+  // séance » à ouvrir et à fermer. Les séries vivent dans la carte de
+  // prescription, là où Ghislain est déjà. Le mode plein écran de la maquette
+  // avait exactement le défaut du mode séance retiré en v8.3.0 — un état de
+  // plus à démarrer, à quitter, et à ne pas oublier de clore.
+  //
+  // Ce que le série par série apporte vraiment : le volume devient réel. La
+  // carte « volume par groupe » comptait des séries DÉCLARÉES ; elle comptera
+  // des séries CHARGÉES. Le top set n'est pas perdu — c'est le maximum.
+
+  function blankSeries(item) {
+    const count = Number(item.spec.sets) || 3;
+    const list = [];
+    for (let i = 0; i < count; i++) {
+      list.push({
+        weight: item.weight === null ? "" : String(item.weight),
+        reps: item.spec.repsMax ?? "",
+        rpe: "",
+        done: false,
+      });
+    }
+    return list;
+  }
+
+  function seriesOf(name) {
+    const draft = sessionDraft();
+    const row = draft.rows[name];
+    if (!row) return [];
+    if (!Array.isArray(row.series)) {
+      const item = prescriptionFor(draft.key).find((x) => x.name === name);
+      row.series = item ? blankSeries(item) : [];
+    }
+    return row.series;
+  }
+
+  function seriesDone(name) {
+    return seriesOf(name).filter((set) => set.done);
+  }
+
+  // Le top set d'un exercice : la série validée dont l'e1RM est le plus élevé.
+  // C'est lui qui alimente le moteur de prescription, comme avant.
+  function topSetOf(name) {
+    const done = seriesDone(name);
+    if (!done.length) return null;
+    return done.reduce((best, set) => {
+      const e = epley(Number(set.weight), Number(set.reps));
+      const bestE = epley(Number(best.weight), Number(best.reps));
+      return e > bestE ? set : best;
+    });
+  }
+
+  function SeriesList(item) {
+    const list = seriesOf(item.name);
+    const currentIndex = list.findIndex((set) => !set.done);
+    return `
+      <div class="series-block">
+        <p class="series-label">Séries</p>
+        <div class="series-list">
+          ${list
+            .map((set, i) => {
+              const isCurrent = i === currentIndex;
+              if (set.done) {
+                return `
+                  <button type="button" class="series-row done" data-action="presc-reopen-set" data-name="${escapeHtml(item.name)}" data-index="${i}">
+                    <span class="series-mark">✓</span>
+                    <span class="series-name">Série ${i + 1}</span>
+                    <span class="series-value">${escapeHtml(String(set.weight).replace(".", ","))} kg × ${escapeHtml(String(set.reps))}${
+                      set.rpe ? ` · RPE ${escapeHtml(String(set.rpe))}` : ""
+                    }</span>
+                  </button>
+                `;
+              }
+              if (!isCurrent) {
+                return `
+                  <div class="series-row">
+                    <span class="series-mark">○</span>
+                    <span class="series-name">Série ${i + 1}</span>
+                    <span class="series-value">— kg × —</span>
+                  </div>
+                `;
+              }
+              return `
+                <div class="series-row current">
+                  <div class="series-head">
+                    <span class="series-mark active">●</span>
+                    <span class="series-name">Série ${i + 1}</span>
+                    <span class="series-focus">En cours</span>
+                  </div>
+                  <div class="stepper-grid">
+                    <div class="stepper">
+                      <span class="stepper-label">Charge (kg)</span>
+                      <div class="stepper-row">
+                        <button type="button" data-action="presc-step" data-name="${escapeHtml(item.name)}" data-index="${i}" data-field="weight" data-delta="-2.5">−</button>
+                        <input type="number" inputmode="decimal" step="0.5" min="0" value="${escapeHtml(String(set.weight))}" data-set-input data-name="${escapeHtml(item.name)}" data-index="${i}" data-field="weight" placeholder="?" />
+                        <button type="button" data-action="presc-step" data-name="${escapeHtml(item.name)}" data-index="${i}" data-field="weight" data-delta="2.5">+</button>
+                      </div>
+                    </div>
+                    <div class="stepper">
+                      <span class="stepper-label">Répétitions</span>
+                      <div class="stepper-row">
+                        <button type="button" data-action="presc-step" data-name="${escapeHtml(item.name)}" data-index="${i}" data-field="reps" data-delta="-1">−</button>
+                        <input type="number" inputmode="numeric" min="1" max="50" value="${escapeHtml(String(set.reps))}" data-set-input data-name="${escapeHtml(item.name)}" data-index="${i}" data-field="reps" />
+                        <button type="button" data-action="presc-step" data-name="${escapeHtml(item.name)}" data-index="${i}" data-field="reps" data-delta="1">+</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="rpe-row">
+                    <span class="stepper-label">Difficulté perçue (RPE)</span>
+                    <div class="rpe-chips">
+                      ${[6, 7, 8, 9, 10]
+                        .map(
+                          (value) =>
+                            `<button type="button" class="rpe-chip ${String(set.rpe) === String(value) ? "active" : ""}" data-action="presc-set-rpe" data-name="${escapeHtml(item.name)}" data-index="${i}" data-value="${value}">${value}</button>`
+                        )
+                        .join("")}
+                    </div>
+                  </div>
+                  <button type="button" class="primary-button series-validate" data-action="presc-validate-set" data-name="${escapeHtml(item.name)}" data-index="${i}">
+                    Valider la série
+                  </button>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+        ${
+          currentIndex === 0
+            ? `<button type="button" class="ghost-button series-shortcut" data-action="presc-fill-all" data-name="${escapeHtml(item.name)}">Tout conforme — valider les ${list.length} séries d'un coup</button>`
+            : ""
+        }
+      </div>
+    `;
+  }
+
   function PrescriptionCard(key = dateKey()) {
     const items = prescriptionFor(key);
     if (!items.length) return "";
@@ -3150,10 +3286,12 @@
             ${session?.focus ? `<p class="small-text session-focus">${escapeHtml(session.focus)}</p>` : ""}
           </div>
           <div class="head-badges">${(() => {
-            const doneCount = items.filter((item) => isExerciseDone(item.name)).length;
             if (alreadyLogged) return StatusBadge("Déjà enregistrée", "good");
-            if (doneCount && doneCount < items.length) return StatusBadge(`${doneCount}/${items.length} faits`, "watch");
-            if (missingRpe) return StatusBadge(`${missingRpe} RPE à remplir`, "watch");
+            // v8.7.0 : le badge compte les séries validées, pas les exercices cochés.
+            const total = items.reduce((sum, item) => sum + seriesOf(item.name).length, 0);
+            const done = items.reduce((sum, item) => sum + seriesDone(item.name).length, 0);
+            if (!done) return StatusBadge(`${total} séries à faire`, "info");
+            if (done < total) return StatusBadge(`${done}/${total} séries`, "watch");
             return StatusBadge("Prêt à enregistrer", "good");
           })()}${SaveBadge()}</div>
         </div>
@@ -3176,17 +3314,13 @@
                     <button type="button" class="ex-check ${isExerciseDone(item.name) ? "done" : ""}" data-action="toggle-exercise-done" data-name="${escapeHtml(item.name)}" aria-pressed="${isExerciseDone(item.name)}" aria-label="${isExerciseDone(item.name) ? "Décocher" : "Cocher"} ${escapeHtml(item.name)}">${isExerciseDone(item.name) ? "✓" : ""}</button>
                     <div class="presc-title">
                       <strong>${escapeHtml(item.name)}</strong>
+                      ${MuscleChip(item.name)}
                       <span class="presc-target">${escapeHtml(item.spec.sets ? `${item.spec.sets} × ${item.spec.repsMin}${item.spec.repsMax !== item.spec.repsMin ? `-${item.spec.repsMax}` : ""}` : "")}${item.spec.rpe ? ` · RPE ${String(item.spec.rpe).replace(".", ",")}` : ""}${item.spec.restSec ? ` · repos ${item.spec.restSec >= 60 ? `${Math.round(item.spec.restSec / 60)} min` : `${item.spec.restSec} s`}` : ""}</span>
                     </div>
                     ${SheetLink(item.name, item.detail || "")}
                   </div>
                   <p class="presc-why">${escapeHtml(item.why)}${item.last?.source ? ` <span class="presc-source">(${escapeHtml(item.last.source)})</span>` : ""}</p>
-                  <div class="presc-fields">
-                    <label><span>kg</span><input type="number" inputmode="decimal" step="0.5" min="0" value="${escapeHtml(String(row.weight))}" data-presc="${escapeHtml(item.name)}" data-field="weight" placeholder="${item.weight === null ? "?" : item.weight}" /></label>
-                    <label><span>reps</span><input type="number" inputmode="numeric" min="1" max="50" value="${escapeHtml(String(row.reps))}" data-presc="${escapeHtml(item.name)}" data-field="reps" /></label>
-                    <label><span>séries</span><input type="number" inputmode="numeric" min="1" max="12" value="${escapeHtml(String(row.sets))}" data-presc="${escapeHtml(item.name)}" data-field="sets" /></label>
-                    <label class="${row.rpe ? "" : "needed"}"><span>RPE</span><input type="number" inputmode="decimal" step="0.5" min="1" max="10" value="${escapeHtml(String(row.rpe))}" data-presc="${escapeHtml(item.name)}" data-field="rpe" placeholder="—" /></label>
-                  </div>
+                  ${SeriesList(item)}
                   ${
                     item.spec.restSec
                       ? `<button type="button" class="ghost-button presc-rest" data-action="start-rest" data-seconds="${item.spec.restSec}" data-name="${escapeHtml(item.name)}">⏱ Lancer le repos (${item.spec.restSec >= 60 ? `${Math.round(item.spec.restSec / 60)} min` : `${item.spec.restSec} s`})</button>`
@@ -5676,6 +5810,155 @@
     }
   };
 
+  // ---- v8.8.0 : quel muscle travaille, quel muscle sentir ----
+  // Demande de Ghislain : « au-dessus du lien pour la vidéo, il faudrait que ça
+  // me dise exactement quel muscle je dois sentir et quel muscle ça doit
+  // travailler. Si c'est possible, sous forme de schéma avec un corps humain. »
+  //
+  // C'est possible : un schéma silhouetté, face et dos, où les régions
+  // sollicitées s'allument. Volontairement schématique et non anatomique —
+  // l'objectif est de repérer une zone d'un coup d'œil pendant une séance, pas
+  // d'apprendre l'insertion des muscles.
+
+  const BODY_REGIONS = {
+    // ---- Face ----
+    pectoraux: { view: "front", label: "Pectoraux", shape: '<path d="M38 52 q12 -6 17 0 v13 q-9 6 -17 -1 z"/><path d="M72 52 q-12 -6 -17 0 v13 q9 6 17 -1 z"/>' },
+    epaules: { view: "front", label: "Épaules", shape: '<ellipse cx="33" cy="50" rx="7" ry="8"/><ellipse cx="77" cy="50" rx="7" ry="8"/>' },
+    biceps: { view: "front", label: "Biceps", shape: '<ellipse cx="29" cy="70" rx="5" ry="11"/><ellipse cx="81" cy="70" rx="5" ry="11"/>' },
+    avantbras: { view: "front", label: "Avant-bras", shape: '<ellipse cx="26" cy="94" rx="4.5" ry="12"/><ellipse cx="84" cy="94" rx="4.5" ry="12"/>' },
+    abdos: { view: "front", label: "Abdominaux", shape: '<rect x="47" y="70" width="16" height="30" rx="5"/>' },
+    obliques: { view: "front", label: "Obliques", shape: '<path d="M42 72 q-4 14 2 27 h4 q-5 -14 -1 -27 z"/><path d="M68 72 q4 14 -2 27 h-4 q5 -14 1 -27 z"/>' },
+    quadriceps: { view: "front", label: "Quadriceps", shape: '<ellipse cx="47" cy="126" rx="8" ry="22"/><ellipse cx="63" cy="126" rx="8" ry="22"/>' },
+    adducteurs: { view: "front", label: "Adducteurs", shape: '<path d="M52 110 q3 16 2 26 h4 q-1 -10 2 -26 z"/>' },
+    mollets_front: { view: "front", label: "Mollets", shape: '<ellipse cx="47" cy="172" rx="6" ry="16"/><ellipse cx="63" cy="172" rx="6" ry="16"/>' },
+    // ---- Dos ----
+    trapezes: { view: "back", label: "Trapèzes", shape: '<path d="M148 42 q17 -7 34 0 l-8 18 q-9 -4 -18 0 z"/>' },
+    dorsaux: { view: "back", label: "Dorsaux", shape: '<path d="M146 62 q19 -5 38 0 l-6 30 q-13 5 -26 0 z"/>' },
+    triceps: { view: "back", label: "Triceps", shape: '<ellipse cx="139" cy="70" rx="5" ry="11"/><ellipse cx="191" cy="70" rx="5" ry="11"/>' },
+    lombaires: { view: "back", label: "Lombaires", shape: '<rect x="157" y="94" width="16" height="18" rx="5"/>' },
+    fessiers: { view: "back", label: "Fessiers", shape: '<ellipse cx="157" cy="122" rx="10" ry="11"/><ellipse cx="173" cy="122" rx="10" ry="11"/>' },
+    ischios: { view: "back", label: "Ischio-jambiers", shape: '<ellipse cx="157" cy="150" rx="8" ry="18"/><ellipse cx="173" cy="150" rx="8" ry="18"/>' },
+    mollets: { view: "back", label: "Mollets", shape: '<ellipse cx="157" cy="176" rx="6.5" ry="15"/><ellipse cx="173" cy="176" rx="6.5" ry="15"/>' },
+  };
+
+  // Silhouettes de fond, face et dos.
+  const BODY_SILHOUETTE = `
+    <g class="body-outline">
+      <circle cx="55" cy="20" r="9"/>
+      <path d="M55 29 q-14 2 -22 14 -6 9 -7 22 -1 12 -2 26 h6 q2 -14 4 -24 1 20 3 32 h36 q2 -12 3 -32 2 10 4 24 h6 q-1 -14 -2 -26 -1 -13 -7 -22 -8 -12 -22 -14 z"/>
+      <path d="M39 103 q-2 26 1 48 1 24 2 44 h9 q1 -22 4 -44 3 22 4 44 h9 q1 -20 2 -44 3 -22 1 -48 z"/>
+      <circle cx="165" cy="20" r="9"/>
+      <path d="M165 29 q-14 2 -22 14 -6 9 -7 22 -1 12 -2 26 h6 q2 -14 4 -24 1 20 3 32 h36 q2 -12 3 -32 2 10 4 24 h6 q-1 -14 -2 -26 -1 -13 -7 -22 -8 -12 -22 -14 z"/>
+      <path d="M149 103 q-2 26 1 48 1 24 2 44 h9 q1 -22 4 -44 3 22 4 44 h9 q1 -20 2 -44 3 -22 1 -48 z"/>
+    </g>
+  `;
+
+  // Quel exercice sollicite quoi, et ce qu'il faut sentir. Le « feel » est la
+  // partie la plus utile : c'est ce qui distingue une série exécutée d'une
+  // série ressentie.
+  const EXERCISE_MUSCLES = {
+    Squat: { primary: ["quadriceps", "fessiers"], secondary: ["lombaires", "abdos", "adducteurs"], feel: "Les cuisses qui brûlent et les fessiers qui poussent en sortie de position basse. Si tu ne sens que le bas du dos, tu penches trop le buste : descends plus vertical, genoux dans l'axe des orteils." },
+    "Presse ou fentes marchées": { primary: ["quadriceps"], secondary: ["fessiers", "adducteurs"], feel: "Le quadriceps sous tension du début à la fin. Ne verrouille pas les genoux en haut : la tension doit rester continue." },
+    "Leg curl": { primary: ["ischios"], secondary: ["mollets"], feel: "L'arrière de la cuisse qui se raccourcit. Bassin plaqué : s'il se soulève, c'est le bas du dos qui compense." },
+    "Mollets debout": { primary: ["mollets"], secondary: [], feel: "Le gastrocnémien, la partie haute et bombée du mollet — c'est lui que le genou tendu cible. Descends jusqu'à l'étirement complet, 3 secondes, sans rebond." },
+    "Mollets assis (soléaire)": { primary: ["mollets"], secondary: [], feel: "Plus bas et plus profond que debout : le soléaire, le muscle du coureur. Genou plié, c'est lui qui prend tout." },
+    "Gainage lesté": { primary: ["abdos"], secondary: ["obliques", "lombaires", "epaules"], feel: "Le ventre serré comme avant un coup de poing, fessiers contractés, côtes basses. Si tu sens les lombaires, le bassin est en bascule : rentre-le." },
+    "Gainage anti-rotation": { primary: ["obliques"], secondary: ["abdos", "fessiers"], feel: "Les obliques qui résistent à la rotation. Rien ne doit tourner — c'est un exercice d'immobilité, pas de mouvement." },
+    "Extension lombaire (banc à lombaires)": { primary: ["lombaires"], secondary: ["fessiers", "ischios"], feel: "La chaîne postérieure basse. Remonte jusqu'à l'alignement, jamais au-delà : l'hyperextension n'ajoute rien et coûte cher." },
+    "Développé couché": { primary: ["pectoraux"], secondary: ["triceps", "epaules"], feel: "Les pectoraux qui s'écartent à la descente et se referment à la poussée. Omoplates serrées et basses tout du long — si l'épaule avant tire, tu as perdu la position." },
+    "Développé incliné haltères": { primary: ["pectoraux"], secondary: ["epaules", "triceps"], feel: "La partie haute du pectoral, près de la clavicule. L'inclinaison déplace la tension vers le haut : ne monte pas le banc au-delà de 30-40°, sinon ce sont les épaules qui travaillent." },
+    "Tractions (lestées si > 8)": { primary: ["dorsaux"], secondary: ["biceps", "trapezes", "avantbras"], feel: "Le dos large qui tire les coudes vers les côtes. Pense à « tirer avec les coudes », pas avec les mains — sinon les biceps prennent tout." },
+    "Tractions pronation": { primary: ["dorsaux"], secondary: ["biceps", "trapezes"], feel: "Idem, avec plus de dorsal et moins de biceps qu'en supination. Poitrine vers la barre, pas menton vers la barre." },
+    "Tirage vertical prise neutre": { primary: ["dorsaux"], secondary: ["biceps", "trapezes"], feel: "Le dos qui s'ouvre. La prise neutre épargne l'épaule : c'est le tirage le plus articulaire-friendly." },
+    "Rowing haltère unilatéral": { primary: ["dorsaux"], secondary: ["trapezes", "biceps", "lombaires"], feel: "Le dos d'un seul côté, l'haltère qui remonte vers la hanche et non vers l'épaule. Le buste ne tourne pas." },
+    "Rowing barre": { primary: ["dorsaux"], secondary: ["trapezes", "lombaires", "biceps"], feel: "Le milieu du dos qui se resserre. Buste fixe : si tu te redresses à chaque répétition, la charge est trop lourde." },
+    "Rowing câble assis": { primary: ["dorsaux"], secondary: ["trapezes", "biceps"], feel: "Les omoplates qui se rapprochent en fin de tirage. Marque une seconde en position serrée." },
+    "Développé militaire": { primary: ["epaules"], secondary: ["triceps", "abdos"], feel: "Les deltoïdes qui poussent au-dessus de la tête. Abdos serrés pour ne pas cambrer : la barre monte, pas les côtes." },
+    "Élévations latérales": { primary: ["epaules"], secondary: ["trapezes"], feel: "Le deltoïde moyen, sur le côté de l'épaule. Monte à l'horizontale, pas plus haut : au-delà ce sont les trapèzes qui prennent le relais." },
+    "Face pull": { primary: ["epaules"], secondary: ["trapezes", "dorsaux"], feel: "L'arrière de l'épaule et le haut du dos. Les mains passent au-dessus des coudes, la corde vient au front. C'est l'exercice de santé d'épaule du bloc." },
+    "Face pull + gainage": { primary: ["epaules"], secondary: ["trapezes", "abdos"], feel: "Même sensation, avec le tronc qui doit rester immobile." },
+    "Élévations Y (banc incliné)": { primary: ["trapezes"], secondary: ["epaules"], feel: "Le trapèze inférieur, entre les omoplates et vers le bas. Charge légère obligatoire : ici c'est le placement qui compte, pas le poids." },
+    "Curl biceps barre EZ": { primary: ["biceps"], secondary: ["avantbras"], feel: "Le biceps seul. Coudes collés au buste : s'ils avancent, l'épaule prend le travail." },
+    "Curl incliné + triceps corde": { primary: ["biceps", "triceps"], secondary: ["avantbras"], feel: "Sur le curl incliné, un étirement marqué du biceps en bas — c'est là que se fait le travail. Sur la corde, écarte les mains en fin d'extension." },
+    "Soulevé de terre roumain": { primary: ["ischios", "fessiers"], secondary: ["lombaires", "dorsaux", "avantbras"], feel: "L'étirement de l'arrière des cuisses à la descente : c'est LE repère. Dès que tu ne le sens plus, tu es descendu trop bas et c'est le dos qui a pris le relais. Jambes quasi tendues, hanches en arrière." },
+    "Squat bulgare": { primary: ["quadriceps", "fessiers"], secondary: ["adducteurs", "abdos"], feel: "La jambe avant qui travaille seule. Buste légèrement penché = plus de fessier ; buste vertical = plus de quadriceps. Choisis et tiens." },
+    "Hip thrust": { primary: ["fessiers"], secondary: ["ischios", "abdos"], feel: "Les fessiers qui serrent en haut, une seconde marquée. Menton rentré et côtes basses : si tu cambres, le travail part dans les lombaires." },
+    "Abduction de hanche (machine ou bande élastique)": { primary: ["fessiers"], secondary: [], feel: "Le moyen fessier, sur le côté de la hanche. C'est un muscle de stabilité — il protège le genou en course. Mouvement lent, pas de balancier." },
+    "Élévations mollet unijambe (test)": { primary: ["mollets"], secondary: [], feel: "Le mollet complet, genou tendu. Le test s'arrête à la perte d'amplitude ou à la douleur." },
+    "Sautillements unipodaux (test)": { primary: ["mollets"], secondary: ["quadriceps", "fessiers"], feel: "Le rebond doit venir de la cheville et du mollet, pas du genou. Contacts brefs et élastiques." },
+    "Pliométrie · A-skip": { primary: ["mollets"], secondary: ["quadriceps", "abdos"], feel: "La cheville qui rebondit et la hanche qui monte. Cherche le rythme avant la hauteur." },
+    "Pliométrie · Ankle bounces (pogo)": { primary: ["mollets"], secondary: [], feel: "Uniquement la cheville. Genoux quasi tendus, contacts très brefs — c'est de l'élasticité, pas de la force." },
+    "Pliométrie · Médecine-ball rotation": { primary: ["obliques"], secondary: ["abdos", "epaules"], feel: "La puissance qui part des hanches et traverse le tronc. Les bras ne font que transmettre." },
+    "Pliométrie · Sautillements unipodaux": { primary: ["mollets"], secondary: ["quadriceps", "fessiers"], feel: "Le mollet qui encaisse et renvoie, sur une jambe. Faible amplitude, réception souple." },
+    "Pliométrie · Bondissements latéraux": { primary: ["fessiers"], secondary: ["quadriceps", "mollets", "adducteurs"], feel: "Le moyen fessier qui freine à la réception. C'est l'amorti qui compte, pas la distance." },
+    "Pliométrie · Départs sprint arrêtés": { primary: ["fessiers", "quadriceps"], secondary: ["ischios", "mollets"], feel: "La poussée complète de la jambe arrière. Jamais au maximum : 80 %, sur un mollet en reconstruction." },
+    "Pliométrie · Bounding (bonds horizontaux)": { primary: ["fessiers", "ischios"], secondary: ["mollets", "quadriceps"], feel: "La poussée horizontale et la suspension. Cherche la longueur de foulée, pas la hauteur." },
+    "Pliométrie · Sprints 20 m": { primary: ["ischios", "fessiers"], secondary: ["mollets", "quadriceps"], feel: "L'arrière de la cuisse à pleine vitesse — c'est le muscle le plus exposé du sprint. Échauffement complet obligatoire." },
+    "Pliométrie · Saut vertical (CMJ)": { primary: ["quadriceps", "fessiers"], secondary: ["mollets"], feel: "Le contre-mouvement descendant puis la détente. Un seul essai à fond par répétition, sinon la mesure ne veut rien dire." },
+    "Pliométrie · Sauts de haies basses": { primary: ["mollets", "quadriceps"], secondary: ["fessiers"], feel: "Le contact au sol le plus court possible. Si tu t'écrases à la réception, les haies sont trop hautes." },
+  };
+
+  function musclesOf(name) {
+    return EXERCISE_MUSCLES[name] || null;
+  }
+
+  function MuscleMap(primary = [], secondary = []) {
+    const shapes = (ids, cls) =>
+      ids
+        .map((id) => (BODY_REGIONS[id] ? `<g class="${cls}">${BODY_REGIONS[id].shape}</g>` : ""))
+        .join("");
+    return `
+      <svg class="muscle-map" viewBox="0 0 220 205" role="img" aria-label="Muscles sollicités">
+        ${BODY_SILHOUETTE}
+        ${shapes(secondary, "muscle-secondary")}
+        ${shapes(primary, "muscle-primary")}
+        <text x="55" y="203" class="muscle-caption">face</text>
+        <text x="165" y="203" class="muscle-caption">dos</text>
+      </svg>
+    `;
+  }
+
+  function MuscleBlock(name) {
+    const m = musclesOf(name);
+    if (!m) return "";
+    const label = (ids) => ids.map((id) => BODY_REGIONS[id]?.label).filter(Boolean);
+    const primaryLabels = [...new Set(label(m.primary))];
+    const secondaryLabels = [...new Set(label(m.secondary))].filter((l) => !primaryLabels.includes(l));
+    return `
+      <div class="muscle-block">
+        <p class="sheet-label">Muscles sollicités</p>
+        <div class="muscle-grid">
+          ${MuscleMap(m.primary, m.secondary)}
+          <div class="muscle-legend">
+            <div>
+              <span class="muscle-key primary"></span>
+              <strong>Moteurs</strong>
+              <p>${escapeHtml(primaryLabels.join(", "))}</p>
+            </div>
+            ${
+              secondaryLabels.length
+                ? `<div>
+                    <span class="muscle-key secondary"></span>
+                    <strong>En soutien</strong>
+                    <p>${escapeHtml(secondaryLabels.join(", "))}</p>
+                  </div>`
+                : ""
+            }
+          </div>
+        </div>
+        <p class="muscle-feel"><strong>Ce que tu dois sentir —</strong> ${escapeHtml(m.feel)}</p>
+      </div>
+    `;
+  }
+
+  // Puce compacte sur la ligne d'exercice, comme dans la maquette.
+  function MuscleChip(name) {
+    const m = musclesOf(name);
+    if (!m || !m.primary.length) return "";
+    const labels = [...new Set(m.primary.map((id) => BODY_REGIONS[id]?.label).filter(Boolean))];
+    return `<span class="muscle-chip">${escapeHtml(labels.join(" · "))}</span>`;
+  }
+
   function exerciseSheet(name) {
     return EXERCISE_LIBRARY[name] || null;
   }
@@ -5742,6 +6025,7 @@
           </div>
           ${prescription ? `<p class="sheet-rx">${escapeHtml(prescription)}</p>` : ""}
           <div class="sheet-body">
+            ${MuscleBlock(name)}
             <div class="sheet-block">
               <h3>Exécution</h3>
               <p>${escapeHtml(sheet.exec.charAt(0).toUpperCase() + sheet.exec.slice(1))}</p>
@@ -8108,19 +8392,32 @@
     if (action === "save-prescribed") {
       harvestPrescribed();
       const draft = sessionDraft();
-      const exercises = Object.entries(draft.rows)
-        .map(([name, row]) => ({
-          name,
-          weight: Number(row.weight),
-          reps: Number(row.reps),
-          sets: Number(row.sets) || 1,
-          rpe: row.rpe === "" ? "" : Number(row.rpe),
-        }))
-        .filter((ex) => Number.isFinite(ex.weight) && ex.weight >= 0 && ex.reps > 0);
+      // v8.7.0 : chaque exercice garde son top set en tête (le moteur de
+      // prescription, l'e1RM et les tendances lisent toujours là), et le détail
+      // des séries validées en dessous — c'est lui qui rend le volume réel.
+      const exercises = Object.keys(draft.rows)
+        .map((name) => {
+          const done = seriesDone(name);
+          if (!done.length) return null;
+          const top = topSetOf(name);
+          return {
+            name,
+            weight: Number(top.weight),
+            reps: Number(top.reps),
+            sets: done.length,
+            rpe: top.rpe === "" ? "" : Number(top.rpe),
+            series: done.map((set) => ({
+              weight: Number(set.weight),
+              reps: Number(set.reps),
+              rpe: set.rpe === "" ? "" : Number(set.rpe),
+            })),
+          };
+        })
+        .filter((ex) => ex && Number.isFinite(ex.weight) && ex.weight >= 0 && ex.reps > 0);
       if (!exercises.length) {
-        draft.error = "Il me faut au moins une charge et un nombre de répétitions pour enregistrer la séance.";
+        draft.error = "Valide au moins une série avant d'enregistrer la séance.";
       } else if (exercises.some((ex) => ex.rpe === "")) {
-        draft.error = "Renseigne le RPE de chaque exercice : c'est lui qui calcule la charge de la séance suivante.";
+        draft.error = "Il manque le RPE sur au moins une série : c'est lui qui calcule la charge de la séance suivante.";
       } else {
         draft.error = "";
         day().workouts.push({
@@ -8131,7 +8428,11 @@
         });
         state.sessionDraft = null;
         day().exercisesDone = []; // v8.2.0 : les coches ont fait leur travail
-        addCoachMessage("coach", `Séance enregistrée (${exercises.length} exercices avec RPE). Les charges de la prochaine séance sont recalculées.`);
+        const totalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
+        addCoachMessage(
+          "coach",
+          `Séance enregistrée : ${exercises.length} exercice${exercises.length > 1 ? "s" : ""}, ${totalSets} série${totalSets > 1 ? "s" : ""} chargées. Les charges de la prochaine séance sont recalculées depuis tes meilleures séries.`
+        );
       }
     }
     if (action === "save-prescribed-run") {
@@ -8228,6 +8529,85 @@
     }
     if (action === "request-adaptation") {
       day().adaptationPending = true;
+    }
+    if (action === "presc-step") {
+      harvestPrescribed();
+      const list = seriesOf(actionButton.dataset.name);
+      const set = list[Number(actionButton.dataset.index)];
+      if (set) {
+        const field = actionButton.dataset.field;
+        const delta = Number(actionButton.dataset.delta);
+        const current = Number(set[field]);
+        const next = (Number.isFinite(current) ? current : 0) + delta;
+        set[field] = String(Math.max(0, Math.round(next * 2) / 2));
+      }
+    }
+    if (action === "presc-set-rpe") {
+      harvestPrescribed();
+      const list = seriesOf(actionButton.dataset.name);
+      const set = list[Number(actionButton.dataset.index)];
+      if (set) set.rpe = set.rpe === actionButton.dataset.value ? "" : actionButton.dataset.value;
+    }
+    if (action === "presc-validate-set") {
+      harvestPrescribed();
+      const name = actionButton.dataset.name;
+      const list = seriesOf(name);
+      const index = Number(actionButton.dataset.index);
+      const set = list[index];
+      const draft = sessionDraft();
+      if (set) {
+        if (!(Number(set.weight) >= 0) || !(Number(set.reps) > 0)) {
+          draft.error = `Série ${index + 1} de ${name} : il me faut une charge et des répétitions.`;
+        } else if (!set.rpe) {
+          draft.error = `Série ${index + 1} de ${name} : choisis le RPE. C'est lui qui pilote la charge suivante.`;
+        } else {
+          draft.error = "";
+          set.done = true;
+          // La série suivante hérite de la charge validée : la plupart du temps
+          // elle ne bouge pas, et quand elle bouge on le voit.
+          const next = list[index + 1];
+          if (next && !next.done) {
+            next.weight = set.weight;
+            if (!next.reps) next.reps = set.reps;
+          }
+          if (list.every((item) => item.done)) {
+            const doneList = day().exercisesDone || [];
+            if (!doneList.includes(name)) day().exercisesDone = [...doneList, name];
+          }
+          const rest = prescriptionFor(draft.key).find((x) => x.name === name)?.spec?.restSec;
+          if (rest && !list.every((item) => item.done)) {
+            state.restTimer = { name, endsAt: Date.now() + rest * 1000 };
+            scheduleRestTick();
+          }
+        }
+      }
+    }
+    if (action === "presc-reopen-set") {
+      const list = seriesOf(actionButton.dataset.name);
+      const set = list[Number(actionButton.dataset.index)];
+      if (set) set.done = false;
+    }
+    if (action === "presc-fill-all") {
+      harvestPrescribed();
+      const name = actionButton.dataset.name;
+      const list = seriesOf(name);
+      const draft = sessionDraft();
+      const first = list[0];
+      if (!first || !(Number(first.weight) >= 0) || !(Number(first.reps) > 0)) {
+        draft.error = `${name} : renseigne d'abord la charge et les répétitions de la première série.`;
+      } else if (!first.rpe) {
+        draft.error = `${name} : choisis le RPE avant de tout valider d'un coup.`;
+      } else {
+        draft.error = "";
+        list.forEach((set) => {
+          set.weight = first.weight;
+          set.reps = first.reps;
+          set.rpe = first.rpe;
+          set.done = true;
+        });
+        const doneList = day().exercisesDone || [];
+        if (!doneList.includes(name)) day().exercisesDone = [...doneList, name];
+      }
     }
     if (action === "catch-up") {
       const missedKey = actionButton.dataset.missedKey;
@@ -8518,6 +8898,12 @@
       const row = draft.rows[input.dataset.presc];
       if (!row) return;
       row[input.dataset.field] = input.value;
+    });
+    // v8.7.0 : les champs de la série en cours.
+    document.querySelectorAll("[data-set-input]").forEach((input) => {
+      const list = seriesOf(input.dataset.name);
+      const set = list[Number(input.dataset.index)];
+      if (set) set[input.dataset.field] = input.value;
     });
     if (state.runDraft) {
       document.querySelectorAll("[data-run-draft]").forEach((input) => {
