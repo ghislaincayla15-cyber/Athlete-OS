@@ -3188,23 +3188,6 @@ body.light .ring {
 .presc-detail { margin-top: 10px; color: var(--muted); font-size: 0.79rem; line-height: 1.5; }
 .presc-detail p { margin: 0 0 4px; }
 
-.rest-bar {
-  position: sticky;
-  top: 8px;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 12px;
-  padding: 12px 16px;
-  border: 1px solid var(--volt, #C0F04A);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-.rest-bar.over { border-color: var(--watch, #F0B84A); }
-.rest-time { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--volt, #C0F04A); }
-.rest-bar.over .rest-time { color: var(--watch, #F0B84A); }
-.rest-label { flex: 1; color: var(--muted); font-size: 0.82rem; }
 
 @media (max-width: 420px) {
   .presc-fields { grid-template-columns: repeat(2, 1fr); }
@@ -4743,27 +4726,6 @@ body.light .workload-track { background: rgba(0, 0, 0, 0.07); }
    v9.1.1 — trois défauts vus sur l'iPhone en séance réelle (02/08, 20 h 53).
    ========================================================================== */
 
-/* 1. Le minuteur de repos était `position: sticky` et placé après la barre
-   d'onglets dans le DOM : arrivé en bas de page, il se posait PAR-DESSUS la
-   navigation et masquait les cinq onglets. Il devient une barre fixe qui vit
-   juste au-dessus d'elle. */
-.rest-bar {
-  position: fixed;
-  right: 12px;
-  bottom: calc(78px + var(--safe-bottom));
-  left: 12px;
-  z-index: 26;
-  margin: 0;
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
-}
-
-/* Et le contenu lui réserve sa place, sinon « Enregistrer la séance » finit
-   dessous — exactement au moment où on en a besoin. */
-body.rest-on .main { padding-bottom: calc(190px + var(--safe-bottom)); }
-
 /* 2. Le sous-menu collant se calait à `top: 0`, c'est-à-dire SOUS l'heure et
    la barre d'état de l'iPhone en mode application installée. */
 .today-subnav { top: calc(env(safe-area-inset-top, 0px) + 4px); }
@@ -4779,11 +4741,6 @@ body.rest-on .main { padding-bottom: calc(190px + var(--safe-bottom)); }
     letter-spacing: 0;
   }
 }
-
-/* Correctif : `.rest-bar` héritait encore de `top: 8px` (règle sticky d'origine).
-   En `position: fixed` avec top ET bottom, la barre s'étirait sur toute la
-   hauteur de l'écran — 758 px au lieu de 60. */
-.rest-bar { top: auto; height: auto; }
 
 /* Et « Données » dépassait encore de 13 px. */
 @media (max-width: 430px) {

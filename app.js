@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "9.1.1";
+  const APP_VERSION = "9.2.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -162,7 +162,6 @@
     openMetric: null,
     sessionDraft: null, // v7.0.0 : brouillon de séance pré-rempli depuis la prescription
     runDraft: null, // v7.0.0 : saisie de course par écart
-    restTimer: null, // v7.0.0 : minuteur de repos { name, endsAt }
     notFullOpen: "", // v7.1.0 : jour dont la version allégée est dépliée
     openMicro: "", // v7.3.0 : micro-session dont le détail est déplié
     manualLogOpen: false, // v7.4.0 : formulaire libre déplié malgré une prescription
@@ -3425,11 +3424,6 @@
                   <p class="presc-why">${escapeHtml(item.why)}${item.last?.source ? ` <span class="presc-source">(${escapeHtml(item.last.source)})</span>` : ""}</p>
                   ${SeriesList(item)}
                   ${
-                    item.spec.restSec
-                      ? `<button type="button" class="ghost-button presc-rest" data-action="start-rest" data-seconds="${item.spec.restSec}" data-name="${escapeHtml(item.name)}">⏱ Lancer le repos (${item.spec.restSec >= 60 ? `${Math.round(item.spec.restSec / 60)} min` : `${item.spec.restSec} s`})</button>`
-                      : ""
-                  }
-                  ${
                     ramp.length || plates
                       ? `<button type="button" class="presc-toggle" data-action="toggle-warmup" data-name="${escapeHtml(item.name)}">${open ? "Masquer" : "Échauffement et disques"} ›</button>`
                       : ""
@@ -3466,21 +3460,6 @@
         </div>
         ${MoveSessionPicker()}
       </section>
-    `;
-  }
-
-  function RestTimerBar() {
-    const timer = state.restTimer;
-    if (!timer?.endsAt) return "";
-    const remaining = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
-    const min = Math.floor(remaining / 60);
-    const sec = String(remaining % 60).padStart(2, "0");
-    return `
-      <div class="rest-bar ${remaining === 0 ? "over" : ""}">
-        <span class="rest-time">${min}:${sec}</span>
-        <span class="rest-label">${remaining === 0 ? "Repos terminé — série suivante" : `Repos · ${escapeHtml(timer.name || "")}`}</span>
-        <button type="button" class="ghost-button" data-action="stop-rest">Arrêter</button>
-      </div>
     `;
   }
 
@@ -8631,7 +8610,6 @@
     // v9.1.1 : le minuteur de repos est une barre fixe au-dessus de la barre
     // d'onglets. Le contenu doit lui réserver sa hauteur, sinon le dernier
     // bouton de la page passe dessous.
-    document.body.classList.toggle("rest-on", Boolean(state.restTimer?.endsAt));
     updateDocumentChrome();
     const page = pageCopy[state.activeTab] || pageCopy.today;
     app.innerHTML = `
@@ -8653,7 +8631,6 @@
         </main>
         <nav class="mobile-nav" aria-label="Navigation mobile">${renderNav("mobile")}</nav>
         ${renderSettings()}
-        ${RestTimerBar()}
         ${ExerciseSheetModal()}
         ${MetricSheetModal()}
       </div>
@@ -8847,13 +8824,6 @@
       const draft = sessionDraft();
       draft.openWarmup = draft.openWarmup === actionButton.dataset.name ? "" : actionButton.dataset.name;
     }
-    if (action === "start-rest") {
-      state.restTimer = { name: actionButton.dataset.name, endsAt: Date.now() + Number(actionButton.dataset.seconds) * 1000 };
-      scheduleRestTick();
-    }
-    if (action === "stop-rest") {
-      state.restTimer = null;
-    }
     if (action === "run-compliance") {
       harvestPrescribed();
       if (state.runDraft) state.runDraft.compliance = actionButton.dataset.value;
@@ -9042,11 +9012,6 @@
           if (list.every((item) => item.done)) {
             const doneList = day().exercisesDone || [];
             if (!doneList.includes(name)) day().exercisesDone = [...doneList, name];
-          }
-          const rest = prescriptionFor(draft.key).find((x) => x.name === name)?.spec?.restSec;
-          if (rest && !list.every((item) => item.done)) {
-            state.restTimer = { name, endsAt: Date.now() + rest * 1000 };
-            scheduleRestTick();
           }
         }
       }
@@ -9470,26 +9435,12 @@
     markScopeTouched(scope);
   }
 
-  // v7.0.0 : le minuteur de repos a besoin d'un battement, l'app ne re-rend
-  // qu'à l'interaction. On s'arrête dès que le repos est écoulé depuis 10 s.
-  let restTick = null;
-  function scheduleRestTick() {
-    if (restTick) clearInterval(restTick);
-    restTick = setInterval(() => {
-      const timer = state.restTimer;
-      if (!timer?.endsAt) {
-        clearInterval(restTick);
-        restTick = null;
-        return;
-      }
-      if (Date.now() - timer.endsAt > 10000) {
-        state.restTimer = null;
-        clearInterval(restTick);
-        restTick = null;
-      }
-      render();
-    }, 1000);
-  }
+  // v9.2.0 : le minuteur de repos a été retiré (v7.0.0 → v9.1.1). Ghislain ne
+  // s'en servait pas, et il coûtait cher : une barre fixe de plus à l'écran, un
+  // `setInterval` qui re-rendait toute l'app chaque seconde pendant la séance,
+  // et trois correctifs de mise en page rien que pour lui. La durée de repos
+  // prescrite reste écrite sur la ligne de chaque exercice — c'est
+  // l'information qui compte, pas le décompte.
 
   // v5.8.0 : plus aucun formulaire de chat. Conservé pour ne pas casser app.onsubmit.
   function handleSubmit() {}
