@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "9.3.0";
+  const APP_VERSION = "9.3.1";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -2094,14 +2094,17 @@
       load: (() => {
         // v7.1.0 : ratio charge aiguë (7 j) / charge chronique (28 j).
         const load = acwr();
-        const verdict = acwrVerdict(load.ratio);
+        const verdict = acwrVerdict(load.ratio, load.mature);
         if (load.ratio === null && load.daysWithData === 0) return null;
         return {
           key: "load",
           label: "Charge récente",
           value: load.ratio === null ? "—" : String(load.ratio).replace(".", ","),
           score: verdict.score,
-          trend: load.ratio === null ? `${load.daysWithData} jour(s) de données sur 28` : `Aiguë ${load.acuteAvg}/j · chronique ${load.chronicAvg}/j`,
+          trend:
+            load.ratio === null
+              ? `${load.daysWithData} jour(s) de données sur 28`
+              : `Aiguë ${load.acuteAvg}/j · chronique ${load.chronicAvg}/j sur ${load.span} jour${load.span > 1 ? "s" : ""}`,
           status: verdict.label,
           influence: verdict.why,
           points: [verdict.score - 4, verdict.score - 2, verdict.score],
@@ -2614,25 +2617,56 @@
     return Math.round(load);
   }
 
+  // v9.3.1 : la charge chronique était toujours divisée par 28, même quand
+  // l'historique n'en couvrait que dix. Un bloc qui démarre voyait donc son
+  // numérateur porter une semaine pleine et son dénominateur dix-huit jours
+  // vides : le ratio sortait gonflé d'un facteur trois, l'app annonçait un
+  // « pic de charge » inexistant, et le readiness était pénalisé de 33 points
+  // pour rien. On divise désormais par la profondeur réelle de l'historique.
   function acwr() {
     let acute = 0;
     let chronic = 0;
     let daysWithData = 0;
+    let span = 0; // profondeur réelle : du jour porteur le plus ancien à aujourd'hui
     for (let i = 0; i < 28; i++) {
       const value = dailyLoad(keyOffset(i));
-      if (value > 0) daysWithData += 1;
+      if (value > 0) {
+        daysWithData += 1;
+        span = i + 1;
+      }
       chronic += value;
       if (i < 7) acute += value;
     }
-    if (daysWithData < 4) return { ratio: null, acute, chronic, daysWithData };
-    const acuteAvg = acute / 7;
-    const chronicAvg = chronic / 28;
+    // Les jours de repos à l'intérieur de la fenêtre comptent pour zéro, c'est
+    // voulu : ils font partie de la charge. Seuls les jours antérieurs au début
+    // de l'historique sont exclus.
+    if (daysWithData < 4) return { ratio: null, acute, chronic, daysWithData, span, mature: false };
+    const acuteAvg = acute / Math.min(7, span);
+    const chronicAvg = chronic / span;
     const ratio = chronicAvg > 0 ? Math.round((acuteAvg / chronicAvg) * 100) / 100 : null;
-    return { ratio, acute: Math.round(acute), chronic: Math.round(chronic), acuteAvg: Math.round(acuteAvg), chronicAvg: Math.round(chronicAvg), daysWithData };
+    return {
+      ratio,
+      acute: Math.round(acute),
+      chronic: Math.round(chronic),
+      acuteAvg: Math.round(acuteAvg),
+      chronicAvg: Math.round(chronicAvg),
+      daysWithData,
+      span,
+      // Sous trois semaines de base, un ratio ne veut rien dire : on l'affiche
+      // sans en tirer d'alerte ni de satisfecit.
+      mature: span >= 21,
+    };
   }
 
-  function acwrVerdict(ratio) {
+  function acwrVerdict(ratio, mature = true) {
     if (ratio === null) return { label: "Historique insuffisant", tone: "info", score: 70, why: "Il faut au moins 4 jours de données sur 4 semaines pour calculer un ratio fiable." };
+    if (!mature)
+      return {
+        label: "Base en construction",
+        tone: "info",
+        score: 78,
+        why: "Ton historique fait moins de trois semaines : le ratio est affiché à titre indicatif, mais il est trop instable pour déclencher une alerte ou valider une progression. Il devient fiable une fois quatre semaines remplies.",
+      };
     if (ratio < 0.8) return { label: "Sous-charge", tone: "watch", score: 78, why: "La charge des 7 derniers jours est basse par rapport à ton habitude : la forme se maintient mal si ça dure." };
     if (ratio <= 1.3) return { label: "Zone optimale", tone: "good", score: 88, why: "Progression maîtrisée : la charge récente reste dans la continuité des 4 dernières semaines." };
     if (ratio <= 1.5) return { label: "Montée rapide", tone: "watch", score: 70, why: "La charge grimpe plus vite que ta base. Sur un mollet en reprise, c'est le moment de ne pas ajouter de volume." };
@@ -8756,8 +8790,12 @@
 
     const load = acwr();
     if (load.ratio !== null) {
-      const verdict = acwrVerdict(load.ratio);
-      lines.push(`- Charge d'entraînement (ACWR 7 j / 28 j) : ${String(load.ratio).replace(".", ",")} — ${verdict.label}`);
+      const verdict = acwrVerdict(load.ratio, load.mature);
+      lines.push(
+        `- Charge d'entraînement (ACWR 7 j / ${load.span} j d'historique) : ${String(load.ratio).replace(".", ",")} — ${verdict.label}${
+          load.mature ? "" : " (base de moins de 3 semaines : indicatif seulement)"
+        }`
+      );
     }
     const runPlan = runStepsFor(today);
     if (runPlan) {
