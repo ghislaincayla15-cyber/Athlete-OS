@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "9.4.0";
+  const APP_VERSION = "9.5.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -160,6 +160,9 @@
     librarySearch: "",
     libraryFilter: "",
     catchUpPreview: null, // v9.4.0 : aperçu du décalage avant confirmation
+    // v9.5.0 : rien n'est prérempli. Une valeur par défaut qui se ferait
+    // passer pour une déclaration a déjà coûté trois bugs en v8.1.1.
+    athlete: { age: "", hrMax: "", hrRest: "" },
     calendarOffset: 0,
     focusExercise: "", // v9.1.0 : l'exercice affiché plein écran pendant la séance
     moreOpen: false, // v9.1.0 : les cartes secondaires de la séance
@@ -523,6 +526,7 @@
               : structuredClone(defaultState.workoutDraft.exercises),
           course: { ...structuredClone(defaultState.workoutDraft.course), ...(saved.workoutDraft?.course || {}) },
         },
+        athlete: { ...structuredClone(defaultState.athlete), ...(saved.athlete || {}) },
         sources: { ...defaultState.sources, ...(saved.sources || {}) },
         imports: { ...defaultState.imports, ...(saved.imports || {}) },
         chat: Array.isArray(saved.chat) && saved.chat.length ? saved.chat : structuredClone(defaultState.chat),
@@ -5063,6 +5067,335 @@
     `;
   }
 
+  // ============================================================
+  // v9.5.0 — Import TCX : zones de fréquence cardiaque des courses.
+  //
+  // Le CSV Garmin ne donne qu'une FC moyenne par activité. Il ne permet donc
+  // pas de savoir si une course prescrite en zone 2 a été courue en zone 2.
+  // Le TCX porte la trace seconde par seconde ; c'est lui qui rend la partie
+  // course pilotable. Le GPX, lui, ne contient pas la fréquence cardiaque.
+  // ============================================================
+
+  // Zones calculées sur la réserve cardiaque (Karvonen), plus juste qu'un
+  // simple pourcentage de la FC max quand la FC de repos est basse.
+  const HR_ZONES = [
+    { id: "z1", label: "Récupération", from: 0.5, to: 0.6 },
+    { id: "z2", label: "Endurance", from: 0.6, to: 0.7 },
+    { id: "z3", label: "Tempo", from: 0.7, to: 0.8 },
+    { id: "z4", label: "Seuil", from: 0.8, to: 0.9 },
+    { id: "z5", label: "Maximale", from: 0.9, to: 1.01 },
+  ];
+
+  // FC max : jamais devinée. Soit tu l'as mesurée et tu la saisis, soit on
+  // l'estime depuis ton âge — et l'app dit laquelle des deux elle utilise.
+  function hrProfile() {
+    const measured = Number(state.athlete?.hrMax);
+    const age = Number(state.athlete?.age);
+    const rest = Number(state.athlete?.hrRest) || Number(state.imports?.health?.rhr) || null;
+    let max = null;
+    let source = null;
+    if (Number.isFinite(measured) && measured > 120) {
+      max = Math.round(measured);
+      source = "mesurée";
+    } else if (Number.isFinite(age) && age > 5 && age < 100) {
+      max = Math.round(220 - age);
+      source = "estimée depuis ton âge";
+    }
+    return { max, rest, source, ready: Boolean(max && rest) };
+  }
+
+  function hrZoneBounds() {
+    const { max, rest } = hrProfile();
+    if (!max || !rest) return null;
+    const reserve = max - rest;
+    return HR_ZONES.map((zone) => ({
+      ...zone,
+      lo: Math.round(rest + zone.from * reserve),
+      hi: Math.round(rest + zone.to * reserve),
+    }));
+  }
+
+  function parseTcx(text) {
+    const doc = new DOMParser().parseFromString(text, "application/xml");
+    if (doc.querySelector("parsererror")) throw new Error("Fichier TCX illisible.");
+    const activity = doc.querySelector("Activity");
+    if (!activity) throw new Error("Aucune activité trouvée dans ce fichier.");
+    const points = [];
+    doc.querySelectorAll("Trackpoint").forEach((node) => {
+      const time = node.querySelector("Time")?.textContent;
+      if (!time) return;
+      const hr = Number(node.querySelector("HeartRateBpm > Value")?.textContent);
+      const distance = Number(node.querySelector("DistanceMeters")?.textContent);
+      points.push({
+        t: new Date(time).getTime(),
+        hr: Number.isFinite(hr) && hr > 0 ? hr : null,
+        m: Number.isFinite(distance) ? distance : null,
+      });
+    });
+    if (!points.length) throw new Error("Ce fichier ne contient aucun point de trace.");
+    points.sort((a, b) => a.t - b.t);
+    const withHr = points.filter((p) => p.hr);
+    if (!withHr.length) {
+      throw new Error("Ce fichier ne contient pas de fréquence cardiaque. C'est le cas des activités importées plutôt qu'enregistrées par la montre — essaie une autre sortie.");
+    }
+    const distances = points.filter((p) => p.m !== null);
+    const startMs = points[0].t;
+    return {
+      id: activity.querySelector("Id")?.textContent || new Date(startMs).toISOString(),
+      sport: activity.getAttribute("Sport") || "",
+      dateKey: dateKey(new Date(startMs)),
+      startMs,
+      durationSec: Math.round((points[points.length - 1].t - startMs) / 1000),
+      km: distances.length ? Math.round(((distances[distances.length - 1].m - distances[0].m) / 1000) * 100) / 100 : null,
+      points,
+    };
+  }
+
+  // Temps passé dans chaque zone. On additionne l'intervalle réel entre deux
+  // points plutôt que de compter les points : la montre n'échantillonne pas
+  // à cadence fixe, compter les points fausserait les pourcentages.
+  function runZoneBreakdown(points) {
+    const bounds = hrZoneBounds();
+    if (!bounds) return null;
+    const seconds = {};
+    bounds.forEach((zone) => (seconds[zone.id] = 0));
+    let below = 0;
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      const gap = (points[i + 1].t - points[i].t) / 1000;
+      // Une coupure de plus d'une minute est une pause, pas du temps couru.
+      if (!(gap > 0) || gap > 60 || !points[i].hr) continue;
+      total += gap;
+      const hr = points[i].hr;
+      const zone = bounds.find((z) => hr >= z.lo && hr < z.hi);
+      if (zone) seconds[zone.id] += gap;
+      else if (hr < bounds[0].lo) below += gap;
+      else seconds[bounds[bounds.length - 1].id] += gap;
+    }
+    if (!total) return null;
+    return {
+      total,
+      below,
+      zones: bounds.map((zone) => ({ ...zone, seconds: seconds[zone.id], pct: Math.round((seconds[zone.id] / total) * 100) })),
+    };
+  }
+
+  // Dérive cardiaque : à allure comparable, la FC qui grimpe signe une course
+  // au-dessus du seuil aérobie. C'est le signal le plus fiable, et il ne
+  // dépend d'aucune estimation de FC max.
+  function cardiacDrift(points) {
+    const usable = points.filter((p) => p.hr && p.m !== null);
+    if (usable.length < 20) return null;
+    // On ignore les trois premières minutes : la montée en régime initiale
+    // n'est pas de la dérive.
+    const startMs = usable[0].t + 3 * 60000;
+    const body = usable.filter((p) => p.t >= startMs);
+    if (body.length < 12) return null;
+    const middle = Math.floor(body.length / 2);
+    const stats = (list) => {
+      const hrs = list.map((p) => p.hr);
+      const meters = list[list.length - 1].m - list[0].m;
+      const secs = (list[list.length - 1].t - list[0].t) / 1000;
+      return {
+        hr: Math.round(hrs.reduce((sum, v) => sum + v, 0) / hrs.length),
+        pace: meters > 50 ? secs / 60 / (meters / 1000) : null,
+      };
+    };
+    const first = stats(body.slice(0, middle));
+    const second = stats(body.slice(middle));
+    if (first.pace === null || second.pace === null) return null;
+    return {
+      firstHr: first.hr,
+      secondHr: second.hr,
+      deltaHr: second.hr - first.hr,
+      firstPace: first.pace,
+      secondPace: second.pace,
+      // Allure stable à 15 s/km près : la dérive n'est alors imputable qu'à
+      // l'intensité, pas à une accélération.
+      steadyPace: Math.abs(second.pace - first.pace) * 60 <= 15,
+    };
+  }
+
+  async function importTcxFile(file) {
+    if (!file) return;
+    state.imports.error = "";
+    try {
+      const run = parseTcx(await file.text());
+      // La trace est rééchantillonnée : 285 points par course saturent vite le
+      // stockage local, 120 suffisent à tracer la courbe sans perte visible.
+      const step = Math.max(1, Math.ceil(run.points.length / 120));
+      const trace = run.points.filter((_, index) => index % step === 0 || index === run.points.length - 1);
+      const hrs = run.points.filter((p) => p.hr).map((p) => p.hr);
+      const record = {
+        id: run.id,
+        fileName: file.name,
+        dateKey: run.dateKey,
+        sport: run.sport,
+        startMs: run.startMs,
+        durationSec: run.durationSec,
+        km: run.km,
+        avgHr: Math.round(hrs.reduce((sum, v) => sum + v, 0) / hrs.length),
+        maxHr: Math.max(...hrs),
+        drift: cardiacDrift(run.points),
+        trace: trace.map((p) => ({ t: Math.round((p.t - run.startMs) / 1000), hr: p.hr, m: p.m === null ? null : Math.round(p.m) })),
+        importedAt: new Date().toISOString(),
+      };
+      state.imports.runs = state.imports.runs || {};
+      state.imports.runs[run.dateKey] = record;
+      // On ne garde que les douze dernières : au-delà, le stockage local du
+      // navigateur devient le facteur limitant.
+      const keys = Object.keys(state.imports.runs).sort();
+      while (keys.length > 12) delete state.imports.runs[keys.shift()];
+
+      const zones = runZoneBreakdown(run.points);
+      const profile = hrProfile();
+      addCoachMessage(
+        "coach",
+        profile.ready && zones
+          ? `Course du ${formatShortDate(run.dateKey)} importée : ${run.km} km en ${formatDuration(run.durationSec)}. Temps en zone 2 : ${formatDuration(Math.round(zones.zones[1].seconds))} sur ${formatDuration(Math.round(zones.total))}.`
+          : `Course du ${formatShortDate(run.dateKey)} importée : ${run.km} km en ${formatDuration(run.durationSec)}. Renseigne ta FC max pour obtenir le temps par zone.`
+      );
+      state.activeTab = "today";
+      state.activeTodayView = "workout";
+    } catch (error) {
+      state.imports.error = error.message || "Fichier TCX illisible.";
+    }
+    persistNow();
+    render();
+  }
+
+  function formatDuration(seconds) {
+    const s = Math.max(0, Math.round(seconds));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    return h ? `${h} h ${String(m).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
+  }
+
+  function formatPaceMin(minutesPerKm) {
+    if (!Number.isFinite(minutesPerKm) || minutesPerKm <= 0) return "—";
+    const m = Math.floor(minutesPerKm);
+    return `${m}:${String(Math.round((minutesPerKm - m) * 60)).padStart(2, "0")}/km`;
+  }
+
+  // Courbe de fréquence cardiaque sur fond de zones. Sans fond de carte ni
+  // dépendance réseau : l'app doit rester lisible hors ligne.
+  function RunHrChart(run, bounds) {
+    const trace = (run.trace || []).filter((p) => p.hr);
+    if (trace.length < 5 || !bounds) return "";
+    const W = 320;
+    const H = 132;
+    const lo = Math.min(bounds[0].lo, Math.min(...trace.map((p) => p.hr))) - 5;
+    const hi = Math.max(bounds[bounds.length - 1].lo + 10, Math.max(...trace.map((p) => p.hr))) + 5;
+    const span = trace[trace.length - 1].t || 1;
+    const x = (t) => (t / span) * W;
+    const y = (hr) => H - ((hr - lo) / (hi - lo)) * H;
+    const bands = bounds
+      .map((zone) => {
+        const top = Math.max(0, y(Math.min(zone.hi, hi)));
+        const bottom = Math.min(H, y(Math.max(zone.lo, lo)));
+        if (bottom - top <= 0) return "";
+        return `<rect x="0" y="${top.toFixed(1)}" width="${W}" height="${(bottom - top).toFixed(1)}" class="hr-band ${zone.id}"/>`;
+      })
+      .join("");
+    const path = trace.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)} ${y(p.hr).toFixed(1)}`).join(" ");
+    const ceiling = bounds[1];
+    return `
+      <svg class="hr-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Fréquence cardiaque au fil de la course">
+        ${bands}
+        ${ceiling ? `<line x1="0" y1="${y(ceiling.hi).toFixed(1)}" x2="${W}" y2="${y(ceiling.hi).toFixed(1)}" class="hr-ceiling"/>` : ""}
+        <path d="${path}" class="hr-line"/>
+      </svg>
+    `;
+  }
+
+  function RunZonesCard(key = dateKey()) {
+    // On importe rarement une course le jour même. À défaut de trace pour la
+    // date affichée, on montre la dernière course connue — datée en clair —
+    // et on la laisse tomber au-delà de dix jours, où elle n'apprend plus rien.
+    const runs = state.imports?.runs || {};
+    let run = runs[key];
+    if (!run) {
+      const recent = Object.values(runs)
+        .filter((item) => item.dateKey >= keyOffset(10))
+        .sort((a, b) => b.startMs - a.startMs);
+      run = recent[0];
+    }
+    if (!run) return "";
+    const profile = hrProfile();
+    const bounds = hrZoneBounds();
+    const zones = bounds ? runZoneBreakdown(run.trace.map((p) => ({ t: p.t * 1000, hr: p.hr }))) : null;
+    // La prescription à confronter est celle du jour de la course, pas celle
+    // du jour où on regarde la carte.
+    const prescribed = runPrescription(run.dateKey);
+    const target = bounds ? bounds[1] : null; // zone 2, celle que le bloc prescrit
+    const inTarget = zones ? zones.zones[1].pct : null;
+
+    return `
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Course importée · ${escapeHtml(formatShortDate(run.dateKey))}</p>
+            <h2>${run.km ? `${String(run.km).replace(".", ",")} km` : "Course"} en ${escapeHtml(formatDuration(run.durationSec))}</h2>
+          </div>
+          ${
+            inTarget === null
+              ? StatusBadge("FC max à renseigner", "watch")
+              : StatusBadge(`${inTarget} % en zone 2`, inTarget >= 70 ? "good" : inTarget >= 40 ? "watch" : "bad")
+          }
+        </div>
+        <div class="session-meta">
+          <span>FC moyenne <b>${run.avgHr}</b></span>
+          <span>Pic <b>${run.maxHr}</b></span>
+          ${run.km ? `<span>Allure <b>${escapeHtml(formatPaceMin(run.durationSec / 60 / run.km))}</b></span>` : ""}
+        </div>
+        ${
+          !profile.ready
+            ? `<div class="notice">
+                <strong>Il me manque ta FC max</strong>
+                <p>Sans elle, je peux afficher ta courbe mais pas la découper en zones. Renseigne-la dans Profil, ou donne ton âge et j'utiliserai l'estimation d'usage.</p>
+                <div class="button-row"><button type="button" class="primary-button" data-goto="profile">${icon("user")}Renseigner</button></div>
+              </div>`
+            : `
+              ${RunHrChart(run, bounds)}
+              <div class="zone-list">
+                ${zones.zones
+                  .map(
+                    (zone) => `
+                      <div class="zone-row ${zone.id} ${zone.id === "z2" ? "target" : ""}">
+                        <span class="zone-name">${escapeHtml(zone.label)}${zone.id === "z2" ? " · prescrite" : ""}</span>
+                        <span class="zone-range">${zone.lo}-${zone.hi}</span>
+                        <span class="zone-bar"><i style="width:${zone.pct}%"></i></span>
+                        <span class="zone-time">${escapeHtml(formatDuration(zone.seconds))} · ${zone.pct} %</span>
+                      </div>`
+                  )
+                  .join("")}
+              </div>
+              <p class="fineprint">Zones calculées sur ta réserve cardiaque : FC repos ${profile.rest}, FC max ${profile.max} (${escapeHtml(profile.source)}).</p>
+            `
+        }
+        ${
+          run.drift && run.drift.steadyPace && run.drift.deltaHr >= 8
+            ? `<div class="notice tone-watch">
+                <strong>Dérive cardiaque : +${run.drift.deltaHr} battements à allure constante</strong>
+                <p>Première moitié ${run.drift.firstHr} bpm à ${escapeHtml(formatPaceMin(run.drift.firstPace))}, seconde moitié ${run.drift.secondHr} bpm à ${escapeHtml(
+                  formatPaceMin(run.drift.secondPace)
+                )}. Même allure, cœur qui monte : tu cours au-dessus de ton seuil aérobie. En endurance fondamentale, la fréquence se stabilise après deux kilomètres et reste plate.</p>
+              </div>`
+            : ""
+        }
+        ${
+          prescribed && target && inTarget !== null && inTarget < 60
+            ? `<div class="notice tone-watch">
+                <strong>Prescrit en zone 2, couru ailleurs</strong>
+                <p>Tu as passé ${inTarget} % du temps entre ${target.lo} et ${target.hi}. Sur la prochaine, règle une alerte de fréquence haute à ${target.hi} sur ta montre : quand elle sonne, tu marches jusqu'à redescendre à ${target.lo}, puis tu repars. L'allure reviendra d'elle-même en quelques semaines.</p>
+              </div>`
+            : ""
+        }
+      </section>
+    `;
+  }
+
   function renderImportPanel() {
     const health = state.imports.health;
     return `
@@ -5089,6 +5422,21 @@
               ? `<p class="small-text">Dernier import : ${escapeHtml(state.imports.garmin.fileName)} · ${state.imports.garmin.count} activité(s) sur ${state.imports.garmin.days} jour(s), du ${formatFrDate(state.imports.garmin.firstDate)} au ${formatFrDate(state.imports.garmin.lastDate)}.</p>`
               : ``
           }
+        </div>
+        <div class="import-drop">
+          <strong>Garmin — une course en détail (TCX)</strong>
+          <p>C'est le fichier qui porte la fréquence cardiaque seconde par seconde, donc les zones. Dans Garmin Connect (site web) : ouvre la course, puis <em>engrenage en haut à droite → Exporter vers TCX</em>. Le GPX ne contient pas la fréquence cardiaque.</p>
+          <label class="primary-button file-button">
+            ${icon("play")}Choisir un fichier .tcx
+            <input type="file" accept=".tcx,application/xml,text/xml" data-import="tcx" />
+          </label>
+          ${(() => {
+            const runs = Object.values(state.imports?.runs || {}).sort((a, b) => b.startMs - a.startMs);
+            if (!runs.length) return "";
+            return `<p class="small-text">${runs.length} course(s) importée(s), la plus récente le ${escapeHtml(formatFrDate(runs[0].dateKey))} : ${
+              runs[0].km ? `${String(runs[0].km).replace(".", ",")} km` : "durée"
+            } en ${escapeHtml(formatDuration(runs[0].durationSec))}, FC moyenne ${runs[0].avgHr}.</p>`;
+          })()}
         </div>
         <div class="import-drop">
           <strong>Apple Santé</strong>
@@ -7181,6 +7529,7 @@
           ${PlyoCard()}
           ${PrescriptionCard()}
           ${RunStepsCard()}
+          ${RunZonesCard()}
           ${RunPrescriptionCard()}
           ${RestDayCard()}
           ${TodayWorkoutsList()}
@@ -8304,11 +8653,43 @@
           <div><span>Séries · 7 j</span><strong>${frNumber(totalSets, 0)}</strong></div>
           <div><span>Version</span><strong>v${APP_VERSION}</strong></div>
         </div>
+        ${HeartProfileFields()}
         <p class="sheet-label">Objectifs, par ordre de priorité</p>
         <ol class="profile-goals">
           ${objectives.map((o) => `<li>${escapeHtml(o)}</li>`).join("")}
         </ol>
       </section>
+    `;
+  }
+
+  // v9.5.0 : les deux nombres sans lesquels une course ne peut pas être
+  // découpée en zones. La FC de repos vient d'Apple Santé quand elle existe,
+  // la FC max ne s'invente pas.
+  function HeartProfileFields() {
+    const profile = hrProfile();
+    const bounds = hrZoneBounds();
+    const importedRest = Number(state.imports?.health?.rhr);
+    return `
+      <p class="sheet-label">Repères cardiaques</p>
+      <div class="heart-fields">
+        <label class="field">
+          <span>Âge</span>
+          <input type="number" inputmode="numeric" min="10" max="99" data-scope="athlete" data-key="age" value="${escapeHtml(String(state.athlete?.age ?? ""))}" placeholder="—" />
+        </label>
+        <label class="field">
+          <span>FC max mesurée</span>
+          <input type="number" inputmode="numeric" min="120" max="230" data-scope="athlete" data-key="hrMax" value="${escapeHtml(String(state.athlete?.hrMax ?? ""))}" placeholder="facultatif" />
+        </label>
+        <label class="field">
+          <span>FC repos</span>
+          <input type="number" inputmode="numeric" min="30" max="100" data-scope="athlete" data-key="hrRest" value="${escapeHtml(String(state.athlete?.hrRest ?? ""))}" placeholder="${Number.isFinite(importedRest) ? `${importedRest} (Apple Santé)` : "—"}" />
+        </label>
+      </div>
+      ${
+        profile.ready
+          ? `<p class="small-text">Zone 2, celle que ton bloc prescrit : <strong>${bounds[1].lo} à ${bounds[1].hi} bpm</strong>. Calcul sur la réserve cardiaque, FC max ${profile.max} (${escapeHtml(profile.source)}), FC repos ${profile.rest}.</p>`
+          : `<p class="small-text">Donne ton âge et j'utiliserai l'estimation d'usage, ou saisis ta FC max si tu l'as déjà mesurée sur un test. Sans l'un des deux, tes courses importées s'affichent en courbe mais pas en zones.</p>`
+      }
     `;
   }
 
@@ -10069,6 +10450,10 @@
     }
     if (target.dataset.import === "garmin") {
       importGarminFile(target.files?.[0]);
+      return;
+    }
+    if (target.dataset.import === "tcx") {
+      importTcxFile(target.files?.[0]);
       return;
     }
     if (!target.dataset.scope || !target.dataset.key) return;

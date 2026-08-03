@@ -5591,3 +5591,133 @@ button.readiness-panel:active {
   .catchup-plan-list li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .catchup-plan-list em { grid-column: 1; }
 }
+
+/* ==========================================================================
+   v9.5.0 — Zones de fréquence cardiaque des courses importées (TCX).
+   ========================================================================== */
+
+.heart-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.heart-fields .field span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.heart-fields .field input {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.heart-fields .field input:focus {
+  outline: none;
+  border-color: var(--volt);
+}
+
+.hr-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 14px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+/* Le thème Kinetic remappe --blue sur une pêche : les cinq bandes
+   devenaient quatre bruns. Teintes explicites, lisibles en clair comme en
+   sombre, et une seule qui compte vraiment, la zone prescrite. */
+.hr-band.z1 { fill: #888780; opacity: 0.16; }
+.hr-band.z2 { fill: #97C459; opacity: 0.26; }
+.hr-band.z3 { fill: #EF9F27; opacity: 0.16; }
+.hr-band.z4 { fill: #D85A30; opacity: 0.2; }
+.hr-band.z5 { fill: #E24B4A; opacity: 0.24; }
+
+.hr-line {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.hr-ceiling {
+  stroke: var(--volt);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+}
+
+.zone-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.zone-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.6rem;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-muted);
+  font-size: 0.78rem;
+}
+
+.zone-row.target {
+  background: var(--green-soft);
+  box-shadow: inset 2px 0 0 var(--volt);
+}
+
+.zone-name { font-weight: 700; }
+
+.zone-range,
+.zone-time {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.zone-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.zone-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+.zone-row.target .zone-bar i { background: var(--volt); }
+.zone-row.z4 .zone-bar i,
+.zone-row.z5 .zone-bar i { background: var(--orange); }
+
+.zone-row .zone-bar { grid-column: 1; align-self: center; }
+
+.notice.tone-watch {
+  border-left: 2px solid var(--orange);
+  background: var(--orange-soft);
+}
+
+@media (max-width: 380px) {
+  .heart-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
