@@ -1,4 +1,4 @@
-const CACHE_NAME = "athlete-os-cache-v58";
+const CACHE_NAME = "athlete-os-cache-v59";
 // v9.3.0 : mise en cache fichier par fichier plutôt que cache.addAll(), qui
 // rejette en bloc dès qu'une seule URL renvoie 404 — une ressource absente
 // suffisait alors à faire échouer l'installation et à priver l'app de son

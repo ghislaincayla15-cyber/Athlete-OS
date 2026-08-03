@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "9.5.0";
+  const APP_VERSION = "9.5.1";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -162,7 +162,7 @@
     catchUpPreview: null, // v9.4.0 : aperçu du décalage avant confirmation
     // v9.5.0 : rien n'est prérempli. Une valeur par défaut qui se ferait
     // passer pour une déclaration a déjà coûté trois bugs en v8.1.1.
-    athlete: { age: "", hrMax: "", hrRest: "" },
+    athlete: { birthDate: "", hrMax: "", hrRest: "" },
     calendarOffset: 0,
     focusExercise: "", // v9.1.0 : l'exercice affiché plein écran pendant la séance
     moreOpen: false, // v9.1.0 : les cartes secondaires de la séance
@@ -5088,18 +5088,32 @@
 
   // FC max : jamais devinée. Soit tu l'as mesurée et tu la saisis, soit on
   // l'estime depuis ton âge — et l'app dit laquelle des deux elle utilise.
+  // Un âge saisi en dur devient faux au premier anniversaire. La date de
+  // naissance, elle, reste juste.
+  function athleteAge() {
+    const raw = state.athlete?.birthDate;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(raw || ""))) return null;
+    const born = new Date(`${raw}T12:00:00`);
+    if (Number.isNaN(born.getTime())) return null;
+    const now = new Date();
+    let age = now.getFullYear() - born.getFullYear();
+    const monthDiff = now.getMonth() - born.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < born.getDate())) age -= 1;
+    return age > 5 && age < 100 ? age : null;
+  }
+
   function hrProfile() {
     const measured = Number(state.athlete?.hrMax);
-    const age = Number(state.athlete?.age);
+    const age = athleteAge();
     const rest = Number(state.athlete?.hrRest) || Number(state.imports?.health?.rhr) || null;
     let max = null;
     let source = null;
     if (Number.isFinite(measured) && measured > 120) {
       max = Math.round(measured);
       source = "mesurée";
-    } else if (Number.isFinite(age) && age > 5 && age < 100) {
-      max = Math.round(220 - age);
-      source = "estimée depuis ton âge";
+    } else if (age) {
+      max = 220 - age;
+      source = `estimée depuis ton âge, ${age} ans`;
     }
     return { max, rest, source, ready: Boolean(max && rest) };
   }
@@ -5353,7 +5367,7 @@
           !profile.ready
             ? `<div class="notice">
                 <strong>Il me manque ta FC max</strong>
-                <p>Sans elle, je peux afficher ta courbe mais pas la découper en zones. Renseigne-la dans Profil, ou donne ton âge et j'utiliserai l'estimation d'usage.</p>
+                <p>Sans elle, je peux afficher ta courbe mais pas la découper en zones. Renseigne-la dans Profil, ou donne ta date de naissance et j'utiliserai l'estimation d'usage.</p>
                 <div class="button-row"><button type="button" class="primary-button" data-goto="profile">${icon("user")}Renseigner</button></div>
               </div>`
             : `
@@ -8673,8 +8687,8 @@
       <p class="sheet-label">Repères cardiaques</p>
       <div class="heart-fields">
         <label class="field">
-          <span>Âge</span>
-          <input type="number" inputmode="numeric" min="10" max="99" data-scope="athlete" data-key="age" value="${escapeHtml(String(state.athlete?.age ?? ""))}" placeholder="—" />
+          <span>Naissance</span>
+          <input type="date" data-scope="athlete" data-key="birthDate" value="${escapeHtml(String(state.athlete?.birthDate ?? ""))}" />
         </label>
         <label class="field">
           <span>FC max mesurée</span>
@@ -8688,7 +8702,7 @@
       ${
         profile.ready
           ? `<p class="small-text">Zone 2, celle que ton bloc prescrit : <strong>${bounds[1].lo} à ${bounds[1].hi} bpm</strong>. Calcul sur la réserve cardiaque, FC max ${profile.max} (${escapeHtml(profile.source)}), FC repos ${profile.rest}.</p>`
-          : `<p class="small-text">Donne ton âge et j'utiliserai l'estimation d'usage, ou saisis ta FC max si tu l'as déjà mesurée sur un test. Sans l'un des deux, tes courses importées s'affichent en courbe mais pas en zones.</p>`
+          : `<p class="small-text">Donne ta date de naissance et j'utiliserai l'estimation d'usage, ou saisis ta FC max si tu l'as déjà mesurée sur un test. Sans l'un des deux, tes courses importées s'affichent en courbe mais pas en zones.</p>`
       }
     `;
   }
