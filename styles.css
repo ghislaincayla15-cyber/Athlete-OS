@@ -5508,3 +5508,86 @@ button.readiness-panel:active {
 @media (max-width: 340px) {
   .records-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ==========================================================================
+   v9.4.0 — Aperçu du décalage de semaine, avant confirmation du rattrapage.
+   ========================================================================== */
+
+.catchup-plan {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--volt) 24%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.catchup-plan-title {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.catchup-plan-list {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.catchup-plan-list li {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 0.82rem;
+}
+
+.catchup-plan-list li.moved {
+  background: var(--green-soft);
+}
+
+.catchup-plan-list li.is-today {
+  box-shadow: inset 2px 0 0 var(--volt);
+}
+
+.catchup-plan-day {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.catchup-plan-list li.is-today .catchup-plan-day {
+  color: var(--volt);
+  font-weight: 700;
+}
+
+.catchup-plan-list strong {
+  font-weight: 700;
+}
+
+.catchup-plan-list em {
+  grid-column: 2;
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--subtle);
+}
+
+.catchup-plan-warn {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border-left: 2px solid var(--orange);
+  background: var(--orange-soft);
+  color: color-mix(in srgb, var(--orange) 82%, var(--text));
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 400px) {
+  .catchup-plan-list li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .catchup-plan-list em { grid-column: 1; }
+}

@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "9.3.1";
+  const APP_VERSION = "9.4.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -159,6 +159,7 @@
     activeProgramView: "week", // v9.3.0 : Semaine ou bibliothèque de mouvements
     librarySearch: "",
     libraryFilter: "",
+    catchUpPreview: null, // v9.4.0 : aperçu du décalage avant confirmation
     calendarOffset: 0,
     focusExercise: "", // v9.1.0 : l'exercice affiché plein écran pendant la séance
     moreOpen: false, // v9.1.0 : les cartes secondaires de la séance
@@ -532,6 +533,7 @@
         // Une recherche restée en mémoire donnerait une bibliothèque presque
         // vide à la réouverture, sans que l'on comprenne pourquoi.
         librarySearch: "",
+        catchUpPreview: null,
         // Refonte visuelle : le sombre devient le thème par défaut, une seule fois.
         theme: saved.uiVersion >= 2 ? saved.theme || "dark" : "dark",
         uiVersion: 2,
@@ -2448,20 +2450,7 @@
   // Grammaire inspirée des apps de suivi grand public : un anneau par grande dimension,
   // une jauge de position dans la plage normale par métrique, une phrase en clair.
 
-  function Ring({ value, label, sub, accent, empty = false, goto: target, focus }) {
-    const inner = empty
-      ? `<div class="ring-value"><strong>—</strong></div>`
-      : `<div class="ring-value"><strong>${value}</strong><span>%</span></div>`;
-    const body = `
-      <div class="ring" style="--score:${empty ? 0 : clamp(value, 0, 100)}; --accent:${empty ? "var(--subtle)" : accent}">${inner}</div>
-      <div class="ring-caption">
-        <strong>${escapeHtml(label)}</strong>
-        <span>${escapeHtml(sub)}</span>
-      </div>
-    `;
-    if (!target) return `<div class="ring-item">${body}</div>`;
-    return `<button type="button" class="ring-item tappable" data-goto="${target}"${focus ? ` data-goto-focus="${focus}"` : ""}>${body}</button>`;
-  }
+
 
   // Charge de la semaine : séances réalisées (journal ou import) sur séances prévues par le bloc.
   function weekSessionLoad() {
@@ -2489,45 +2478,7 @@
     return null;
   }
 
-  function RingsRow(readiness) {
-    const load = weekSessionLoad();
-    const sleep = sleepScoreToday();
-    return `
-      <section class="card rings-card">
-        <div class="rings-row">
-          ${Ring({
-            value: readiness.score,
-            label: "Récupération",
-            sub: readiness.empty ? "Check-in à faire" : readiness.category,
-            accent: readiness.accent,
-            empty: readiness.empty,
-            goto: readiness.empty ? "today:checkin" : null,
-            focus: readiness.empty ? "fatigue" : null,
-          })}
-          ${Ring({
-            value: load.pct ?? 0,
-            label: "Séances",
-            sub: load.planned ? `${load.done} sur ${load.planned} cette semaine` : "Aucune prévue à ce stade",
-            accent: "var(--indigo)",
-            empty: load.pct === null,
-            goto: load.pct === null ? null : "today:workout",
-          })}
-          ${Ring({
-            value: sleep?.score ?? 0,
-            label: "Sommeil",
-            sub: sleep ? sleep.sub : "Importer Apple Santé",
-            accent: "var(--blue, var(--indigo))",
-            empty: !sleep,
-            goto: sleep ? null : "today:data",
-          })}
-        </div>
-        <div class="coach-line">
-          <span class="coach-line-tag">Ce que j'en lis</span>
-          <p>${escapeHtml(coachSentence(readiness, load, sleep))}</p>
-        </div>
-      </section>
-    `;
-  }
+
 
   // Une phrase, en langage courant, qui dit l'essentiel du jour.
   function coachSentence(readiness, load, sleep) {
@@ -7809,6 +7760,97 @@
     return out;
   }
 
+  // ============================================================
+  // v9.4.0 — Rattrapage par décalage en cascade.
+  //
+  // L'ancien rattrapage échangeait la séance du jour avec la séance manquée.
+  // Or une séance manquée est toujours dans le passé : lui donner la séance
+  // du jour, c'est la poser sur une date déjà écoulée, donc la perdre. La
+  // carte promettait « rien n'est perdu » en supprimant une séance.
+  //
+  // Le rattrapage insère désormais la séance manquée aujourd'hui et repousse
+  // tout le reste de la semaine d'un cran. C'est le jour de repos qui absorbe
+  // le décalage, jamais une séance d'entraînement.
+  // ============================================================
+
+  // Une séance qui sollicite le mollet en impact : course ou pliométrie.
+  function isImpactSession(session) {
+    return Boolean(session) && (session.kind === "course" || session.plyo === true);
+  }
+
+  // Une séance à dominante basse : le mollet y travaille en charge.
+  function isLowerSession(session) {
+    return Boolean(session) && session.kind === "muscu" && /^Bas /.test(session.title || "");
+  }
+
+  function catchUpPlan(missedKey) {
+    const todayKey = dateKey();
+    const monday = mondayOfWeek(todayKey);
+
+    // Créneaux restants : d'aujourd'hui à dimanche.
+    const slots = [];
+    for (let i = 0; i < 7; i++) {
+      const key = addDaysKey(monday, i);
+      if (key >= todayKey) slots.push(key);
+    }
+    if (!slots.length) return null;
+
+    // File d'attente : la séance manquée passe devant, puis tout ce qui était
+    // déjà prévu d'aujourd'hui à dimanche, dans l'ordre.
+    const queue = [effectiveWeekday(missedKey), ...slots.map(effectiveWeekday)];
+
+    // Le décalage doit être absorbé par le repos, pas par une séance. On
+    // retire donc les jours de repos en trop, en commençant par le premier.
+    const dropped = [];
+    while (queue.length > slots.length) {
+      const restIndex = queue.findIndex((weekday) => BLOC1.days[weekday]?.kind === "repos");
+      if (restIndex === -1) break;
+      queue.splice(restIndex, 1);
+    }
+    // S'il reste du débordement, ce sont de vraies séances qui sautent : on
+    // les nomme plutôt que de les faire disparaître en silence.
+    while (queue.length > slots.length) {
+      const weekday = queue.pop();
+      dropped.push(BLOC1.days[weekday]?.title || "Séance");
+    }
+
+    const rows = slots.map((key, index) => ({
+      key,
+      weekday: queue[index],
+      before: programSessionFor(key),
+      after: BLOC1.days[queue[index]] || null,
+      moved: queue[index] !== effectiveWeekday(key),
+    }));
+
+    // Alertes. Insérer une séance dans une semaine déjà pleine a un coût :
+    // il doit apparaître à l'écran, pas se deviner après coup.
+    const warnings = [];
+    const training = rows.filter((row) => row.after && row.after.kind !== "repos");
+    if (!rows.some((row) => row.after?.kind === "repos")) {
+      warnings.push(`Plus aucun jour de repos d'ici dimanche : ${training.length} jours d'entraînement d'affilée.`);
+    }
+    const counts = new Map();
+    training.forEach((row) => counts.set(row.after.title, (counts.get(row.after.title) || 0) + 1));
+    [...counts.entries()]
+      .filter(([, n]) => n > 1)
+      .forEach(([title, n]) => warnings.push(`« ${title} » revient ${n} fois cette semaine : c'est du volume en plus, pas un simple déplacement.`));
+
+    const sessionAt = (index) => (index < 0 ? programSessionFor(addDaysKey(todayKey, -1)) : rows[index]?.after);
+    rows.forEach((row, index) => {
+      if (!row.after || row.after.kind === "repos") return;
+      const previous = sessionAt(index - 1);
+      if (!previous || previous.kind === "repos") return;
+      const label = new Date(`${row.key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long" });
+      if (row.after.kind === "course" && isLowerSession(previous)) {
+        warnings.push(`${label} : course juste après « ${previous.title} ». Le programme demande de placer les courses après un jour Haut, jamais après un jour Bas.`);
+      } else if (isImpactSession(row.after) && isImpactSession(previous)) {
+        warnings.push(`${label} : deux jours à impact d'affilée pour le mollet (${previous.title} puis ${row.after.title}).`);
+      }
+    });
+
+    return { slots, rows, dropped, warnings, missedKey };
+  }
+
   function relativeDayLabel(key) {
     const diff = Math.round((new Date(`${dateKey()}T12:00:00`) - new Date(`${key}T12:00:00`)) / 86400000);
     if (diff === 1) return "Hier";
@@ -7816,11 +7858,55 @@
     return `${new Date(`${key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long" })} dernier`;
   }
 
+  // Aperçu de la semaine telle qu'elle sera après le décalage. On ne confirme
+  // rien avant de l'avoir montré : c'est toute la semaine qui bouge.
+  function CatchUpPreview(missedKey) {
+    const plan = catchUpPlan(missedKey);
+    if (!plan) return "";
+    const todayKey = dateKey();
+    return `
+      <div class="catchup-plan">
+        <p class="catchup-plan-title">Ta semaine après le décalage</p>
+        <ol class="catchup-plan-list">
+          ${plan.rows
+            .map((row) => {
+              const label = new Date(`${row.key}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric" });
+              const title = row.after?.title || "Repos";
+              return `<li class="${row.moved ? "moved" : ""} ${row.key === todayKey ? "is-today" : ""}">
+                <span class="catchup-plan-day">${escapeHtml(label)}${row.key === todayKey ? " · aujourd’hui" : ""}</span>
+                <strong>${escapeHtml(title)}</strong>
+                ${row.moved && row.before ? `<em>était ${escapeHtml(row.before.title)}</em>` : ""}
+              </li>`;
+            })
+            .join("")}
+        </ol>
+        ${
+          plan.dropped.length
+            ? `<p class="catchup-plan-warn">La semaine est pleine : ${escapeHtml(plan.dropped.join(", "))} ne tient plus et sautera.</p>`
+            : `<p class="small-text">Aucune séance perdue : c'est le jour de repos qui absorbe le décalage.</p>`
+        }
+        ${plan.warnings.map((w) => `<p class="catchup-plan-warn">${escapeHtml(w)}</p>`).join("")}
+        <div class="button-row">
+          <button type="button" class="primary-button" data-action="confirm-catch-up" data-missed-key="${escapeHtml(missedKey)}">${icon("check")}Décaler la semaine</button>
+          <button type="button" class="secondary-button" data-action="cancel-catch-up">Annuler</button>
+        </div>
+      </div>
+    `;
+  }
+
   function CatchUpCard() {
     const missed = missedSessions();
     const todaySession = programActive() ? programSessionFor() : null;
     const todayBusy = Boolean(todaySession) && todaySession.kind !== "repos";
     const todayLogged = (day().workouts || []).length > 0;
+
+    // v9.4.0 : le retour en arrière ne vivait que dans la carte de séance
+    // muscu. Un rattrapage qui tombe sur un jour de course rendait donc le
+    // décalage irréversible. Il est désormais aussi ici, là où il a été
+    // déclenché.
+    const restoreRow = weekHasSwaps()
+      ? `<div class="button-row" style="margin-top:12px"><button type="button" class="secondary-button" data-action="undo-move-session">Rétablir l’ordre initial de la semaine</button></div>`
+      : "";
 
     if (!missed.length) {
       return `
@@ -7833,6 +7919,7 @@
             ${StatusBadge("À jour", "good")}
           </div>
           <p class="small-text">Aucune séance prescrite n'est restée sans trace sur les 10 derniers jours. Une séance déclarée « partielle » ou « manquée » au bilan du soir réapparaîtra ici tant qu'elle n'aura pas été refaite.</p>
+          ${restoreRow}
         </section>
       `;
     }
@@ -7846,7 +7933,7 @@
           </div>
           ${StatusBadge(`${missed.length} en attente`, "watch")}
         </div>
-        <p class="small-text">Rattraper une séance l'échange avec celle d'aujourd'hui : tu fais celle qui a sauté, et celle du jour reprend la place de l'autre. Rien n'est perdu, la semaine se réorganise.</p>
+        <p class="small-text">Rattraper une séance la place aujourd'hui et repousse tout le reste de la semaine d'un cran. C'est le jour de repos qui absorbe le décalage. Tu verras la semaine réorganisée avant de confirmer.</p>
         <div class="catchup-list">
           ${missed
             .slice(0, 3)
@@ -7861,9 +7948,13 @@
                   item.session.rpe ? ` · RPE ${escapeHtml(String(item.session.rpe))}` : ""
                 }</p>
                 ${item.declared ? `<p class="small-text">Tu l'avais déclarée non faite au bilan du soir.</p>` : ""}
-                <button type="button" class="primary-button" data-action="catch-up" data-missed-key="${escapeHtml(item.key)}">
-                  Rattraper maintenant →
-                </button>
+                ${
+                  state.catchUpPreview === item.key
+                    ? CatchUpPreview(item.key)
+                    : `<button type="button" class="primary-button" data-action="catch-up" data-missed-key="${escapeHtml(item.key)}">
+                         Rattraper aujourd'hui →
+                       </button>`
+                }
               </article>
             `
             )
@@ -7880,9 +7971,10 @@
           todayLogged
             ? "⚠️ Tu as déjà enregistré une séance aujourd'hui. Rattraper en plus ferait deux séances dans la même journée — c'est rarement une bonne idée en déficit calorique. Préfère demain."
             : todayBusy
-              ? `Aujourd'hui, « ${escapeHtml(todaySession.title)} » est prévue. Si tu rattrapes, elle prendra la place du jour manqué et tu la feras à sa date.`
+              ? `Aujourd'hui, « ${escapeHtml(todaySession.title)} » est prévue. Si tu rattrapes, elle passe à demain et le reste de la semaine suit.`
               : "Aujourd'hui est un jour de repos : c'est le meilleur moment pour rattraper, sans rien décaler d'autre."
         }</p>
+        ${restoreRow}
       </section>
     `;
   }
@@ -9603,34 +9695,42 @@
         if (!doneList.includes(name)) day().exercisesDone = [...doneList, name];
       }
     }
+    // Premier appui : on montre la semaine telle qu'elle sera, sans rien changer.
     if (action === "catch-up") {
+      state.catchUpPreview = actionButton.dataset.missedKey || null;
+    }
+    if (action === "cancel-catch-up") {
+      state.catchUpPreview = null;
+    }
+    if (action === "confirm-catch-up") {
       const missedKey = actionButton.dataset.missedKey;
       const todayKey = dateKey();
-      if (missedKey && missedKey !== todayKey) {
+      const plan = missedKey && missedKey !== todayKey ? catchUpPlan(missedKey) : null;
+      if (plan) {
         const missedTitle = programSessionFor(missedKey)?.title || "Séance";
-        const todayTitle = programSessionFor(todayKey)?.title || "Repos";
         state.program.swaps = state.program.swaps || {};
-        const todayEff = effectiveWeekday(todayKey);
-        const missedEff = effectiveWeekday(missedKey);
-        // Échange strict : la séance manquée vient aujourd'hui, celle du jour
-        // prend sa date. Le volume de la semaine reste le même.
-        state.program.swaps[todayKey] = missedEff;
-        state.program.swaps[missedKey] = todayEff;
-        if (state.program.swaps[todayKey] === actualWeekday(todayKey)) delete state.program.swaps[todayKey];
-        if (state.program.swaps[missedKey] === actualWeekday(missedKey)) delete state.program.swaps[missedKey];
+        // Chaque jour restant de la semaine reçoit la séance suivante de la file.
+        plan.rows.forEach((row) => {
+          if (row.weekday === actualWeekday(row.key)) delete state.program.swaps[row.key];
+          else state.program.swaps[row.key] = row.weekday;
+        });
+        state.catchUpPreview = null;
         state.sessionDraft = null; // les charges se recalculent pour la nouvelle séance
         state.activeTab = "today";
         state.activeTodayView = "workout";
+        const decalees = plan.rows.filter((row) => row.moved && row.after && row.after.kind !== "repos").length;
         logDecision(
           "rattrapage",
-          `« ${missedTitle} » du ${formatShortDate(missedKey)} rattrapée aujourd'hui (échange avec « ${todayTitle} »)`,
-          "Demande de l'athlète",
+          `« ${missedTitle} » du ${formatShortDate(missedKey)} rattrapée aujourd'hui, ${decalees} séance(s) décalée(s)`,
+          plan.dropped.length ? `Semaine pleine : ${plan.dropped.join(", ")} saute` : "Le jour de repos absorbe le décalage, aucune séance perdue",
           "Saisie manuelle",
           "Eleve"
         );
         addCoachMessage(
           "coach",
-          `« ${missedTitle} » est maintenant la séance du jour. Les charges sont recalculées depuis tes derniers top sets. « ${todayTitle} » a pris la date du ${formatShortDate(missedKey)} — le volume de la semaine est inchangé.`
+          `« ${missedTitle} » est la séance du jour, les charges sont recalculées depuis tes derniers top sets. Le reste de la semaine a été décalé d'un cran${
+            plan.dropped.length ? ` et ${plan.dropped.join(", ")} saute, la semaine étant pleine.` : ", et c'est le jour de repos qui absorbe le décalage."
+          }${plan.warnings.length ? ` Point de vigilance : ${plan.warnings[0]}` : ""}`
         );
       }
     }
