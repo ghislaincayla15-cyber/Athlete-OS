@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "9.2.0";
+  const APP_VERSION = "9.3.0";
   const STORAGE_KEY = "athlete-os-v3";
   const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
   const LEGACY_KEY = "athlete-os-v2";
@@ -20,6 +20,13 @@
   const profileViews = [
     { id: "performance", label: "Progression" },
     { id: "export", label: "Export" },
+  ];
+
+  // v9.3.0 : la bibliothèque de mouvements rejoint le Programme, comme dans
+  // la maquette — c'est bien l'onglet Programme qui y est actif.
+  const programViews = [
+    { id: "week", label: "Semaine" },
+    { id: "library", label: "Mouvements" },
   ];
 
   const pageCopy = {
@@ -149,9 +156,13 @@
     activeTab: "today",
     activeTodayView: "workout",
     activeProfileView: "performance",
+    activeProgramView: "week", // v9.3.0 : Semaine ou bibliothèque de mouvements
+    librarySearch: "",
+    libraryFilter: "",
     calendarOffset: 0,
     focusExercise: "", // v9.1.0 : l'exercice affiché plein écran pendant la séance
     moreOpen: false, // v9.1.0 : les cartes secondaires de la séance
+    summaryMoreOpen: false, // v9.3.0 : les cartes d'analyse longues de la Synthèse
     intentOpen: false, // v9.1.0 : le « pourquoi » des objectifs du bloc
     theme: "dark",
     uiVersion: 2,
@@ -518,6 +529,9 @@
         movePickerOpen: false,
         openExercise: null,
         openExerciseDetail: "",
+        // Une recherche restée en mémoire donnerait une bibliothèque presque
+        // vide à la réouverture, sans que l'on comprenne pourquoi.
+        librarySearch: "",
         // Refonte visuelle : le sombre devient le thème par défaut, une seule fois.
         theme: saved.uiVersion >= 2 ? saved.theme || "dark" : "dark",
         uiVersion: 2,
@@ -1874,6 +1888,7 @@
       tune: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
       send: '<path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7Z"/>',
       check: '<path d="m20 6-11 11-5-5"/>',
+      search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4.3-4.3"/>',
       history:
         '<path d="M3 3v6h6"/><path d="M3.5 9a9 9 0 1 0 2.1-3.4L3 9"/><path d="M12 7v5l4 2"/>',
       user:
@@ -6836,6 +6851,247 @@
     `;
   }
 
+  // ============================================================
+  // v9.3.0 — Synthèse reprise de la maquette Stitch « dashboard_aujourd_hui ».
+  // La composition de la maquette, dans l'ordre : ligne de date, carte héros
+  // de la séance, bento poids / sommeil, bandeau d'énergie, panneau de
+  // récupération avec anneau, puis dernière performance et objectif de la
+  // semaine. Les cartes d'analyse longues (indicateurs, signaux, facteurs)
+  // passent derrière un dépliant : cet écran se lit au réveil, en trente
+  // secondes, pas en trois minutes de défilement.
+  // ============================================================
+
+  function todayDateLabel() {
+    return new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  }
+
+  function HeroSessionCard() {
+    const session = programActive() ? programSessionFor() : null;
+    if (!session) return "";
+    const rest = session.kind === "repos";
+    const entry = day();
+    const logged = (entry.workouts || []).length > 0;
+    const completion = entry.evening?.touched ? entry.evening.completion : null;
+    const done = logged || completion === "complete" || completion === "adaptee";
+    const week = programWeek();
+    const isDeloadWeek = week === BLOC1.deloadWeek;
+    const items = rest ? [] : prescriptionFor();
+
+    const chips = [];
+    if (items.length) chips.push(`${items.length} exercice${items.length > 1 ? "s" : ""}`);
+    if (!rest && session.rpe) chips.push(`Intensité : RPE ${isDeloadWeek ? "≤ 6 (deload)" : String(session.rpe).replace(".", ",")}`);
+    if (week !== null) chips.push(`Semaine ${week === 0 ? "d’amorce" : `${week}/${BLOC1.totalWeeks}`}`);
+
+    const status = rest ? "Repos" : done ? "Faite" : entry.workoutStarted ? "En cours" : "Programmé";
+    const cta = rest ? "Voir la journée" : done ? "Revoir la séance" : "Commencer la séance";
+
+    return `
+      <section class="hero-session ${rest ? "rest" : ""} ${done ? "done" : ""}">
+        <span class="hero-session-glyph" aria-hidden="true">${icon(rest ? "moon" : "activity")}</span>
+        <div class="hero-session-top">
+          <span class="hero-status">${escapeHtml(status)}</span>
+          ${session.duration ? `<span class="hero-duration">${escapeHtml(formatMinutes(session.duration))}</span>` : ""}
+        </div>
+        <h2 class="hero-title">${escapeHtml(session.title)}</h2>
+        ${session.focus ? `<p class="hero-focus">${escapeHtml(session.focus)}</p>` : ""}
+        ${chips.length ? `<div class="hero-chips">${chips.map((chip) => `<span class="hero-chip">${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
+        <button type="button" class="hero-cta" data-goto="today:workout">${icon("play")}${escapeHtml(cta)}</button>
+      </section>
+    `;
+  }
+
+  // Bento à deux tuiles : poids et sommeil, les deux chiffres que la maquette
+  // met côte à côte sous la séance. Rien n'est inventé : une donnée absente
+  // affiche un tiret et emmène là où on la renseigne.
+  function BentoMetrics() {
+    const weight = weightSummary();
+    const sleep = sleepScoreToday();
+
+    // Sans pesée récente, on affiche la dernière connue avec sa date plutôt
+    // qu'un tiret : c'est une vraie mesure, simplement datée.
+    let fallback = null;
+    if (weight.last === null) {
+      for (let i = 0; i < 120; i++) {
+        const key = keyOffset(i);
+        const value = Number(journalEntry(key)?.weight);
+        if (Number.isFinite(value) && value > 0) {
+          fallback = { value, key };
+          break;
+        }
+      }
+    }
+
+    const weightValue = weight.last ?? fallback?.value ?? null;
+    const weightSub =
+      weight.delta !== null
+        ? `${weight.delta > 0 ? "+" : ""}${frNumber(weight.delta)} kg vs semaine passée`
+        : weight.count7
+          ? `${weight.count7} pesée${weight.count7 > 1 ? "s" : ""} sur 7 jours`
+          : fallback
+            ? `Dernière pesée le ${formatShortDate(fallback.key)}`
+            : "Aucune pesée enregistrée";
+
+    const sleepBand = !sleep ? 0 : sleep.score >= 80 ? 3 : sleep.score >= 60 ? 2 : 1;
+    const sleepSub = !sleep ? "Importer Apple Santé" : sleepBand === 3 ? "Nuit complète" : sleepBand === 2 ? "Nuit correcte" : "Nuit courte";
+
+    return `
+      <div class="bento-row">
+        <button type="button" class="bento-tile" data-goto="today:checkin" data-goto-focus="weight">
+          <span class="bento-label">Poids</span>
+          <span class="bento-value ${weightValue ? "" : "empty"}">${weightValue ? frNumber(weightValue) : "—"}<em>kg</em></span>
+          <span class="bento-track" title="Jours pesés sur les 7 derniers"><span style="width:${Math.round((weight.count7 / 7) * 100)}%"></span></span>
+          <span class="bento-sub">${escapeHtml(weightSub)}</span>
+        </button>
+        <button type="button" class="bento-tile" data-goto="today:data">
+          <span class="bento-label">Sommeil</span>
+          <span class="bento-value ${sleep ? "" : "empty"}">${sleep ? escapeHtml(sleep.sub) : "—"}</span>
+          <span class="bento-segments">${[1, 2, 3].map((step) => `<i class="${step <= sleepBand ? "on" : ""}"></i>`).join("")}</span>
+          <span class="bento-sub">${escapeHtml(sleepSub)}</span>
+        </button>
+      </div>
+    `;
+  }
+
+  // Bandeau d'énergie : cinq barres, un jour par barre, celle d'aujourd'hui en
+  // avant. Un jour sans check-in reste une barre vide — c'est une absence de
+  // donnée, pas un zéro.
+  function EnergyStrip() {
+    const heights = { faible: 34, moyen: 64, eleve: 100 };
+    const days = [];
+    for (let i = 4; i >= 0; i--) {
+      const key = keyOffset(i);
+      const entry = journalEntry(key);
+      const value = entry?.morning?.completed ? entry.morning.energy : null;
+      days.push({
+        key,
+        value,
+        height: value ? heights[value] || 64 : 0,
+        label: new Date(key).toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", ""),
+        today: i === 0,
+      });
+    }
+    const todayValue = days[days.length - 1].value;
+    return `
+      <section class="energy-card">
+        <div class="energy-head">
+          <span class="bento-label">Niveau d’énergie</span>
+          <strong class="energy-verdict ${todayValue || "empty"}">${todayValue ? escapeHtml(labelFor("energy", todayValue)) : "À renseigner"}</strong>
+        </div>
+        <div class="energy-bars">
+          ${days
+            .map(
+              (item) => `
+                <span class="energy-bar ${item.today && item.value ? "current" : ""} ${item.value ? "" : "empty"} ${item.today ? "is-today" : ""}">
+                  <i style="height:${item.height}%"></i>
+                  <em>${escapeHtml(item.label)}</em>
+                </span>`
+            )
+            .join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  // Panneau de récupération : la géométrie de la carte « Daily Check-in » de la
+  // maquette (texte à gauche, anneau à droite). Tant que le check-in n'est pas
+  // fait, l'anneau montre la complétion du jour et la carte invite à le faire ;
+  // une fois fait, il porte le score de récupération et la lecture du coach.
+  function ReadinessPanel(readiness) {
+    const load = weekSessionLoad();
+    const sleep = sleepScoreToday();
+    const missing = missingItems();
+    const totalChecks = 6; // check-in, poids, séance, bilan, tour de taille, import santé
+    const completion = clamp(Math.round(((totalChecks - missing.length) / totalChecks) * 100), 0, 100);
+    const pending = missing[0];
+
+    if (readiness.empty) {
+      return `
+        <button type="button" class="readiness-panel pending" data-goto="today:${pending?.view || "checkin"}"${
+          pending?.focus ? ` data-goto-focus="${pending.focus}"` : ""
+        }>
+          <div class="readiness-text">
+            <span class="bento-label">Check-in du matin</span>
+            <h2>${escapeHtml(pending ? pending.label : "Tout est renseigné")}</h2>
+            <p>${escapeHtml(coachSentence(readiness, load, sleep))}</p>
+          </div>
+          <div class="ring readiness-ring" style="--score:${completion}; --accent:var(--volt)">
+            <div class="ring-value"><strong>${completion}</strong><span>%</span></div>
+          </div>
+        </button>
+      `;
+    }
+
+    return `
+      <section class="readiness-panel">
+        <div class="readiness-text">
+          <span class="bento-label">Récupération</span>
+          <h2>${escapeHtml(readiness.category)}</h2>
+          <p>${escapeHtml(coachSentence(readiness, load, sleep))}</p>
+        </div>
+        <div class="ring readiness-ring" style="--score:${clamp(readiness.score, 0, 100)}; --accent:${readiness.accent}">
+          <div class="ring-value"><strong>${readiness.score}</strong><span>%</span></div>
+        </div>
+      </section>
+    `;
+  }
+
+  // Deuxième bento de la maquette : dernière performance et objectif de la
+  // semaine. La performance vient des séries réellement enregistrées.
+  function BentoRecap() {
+    const lifts = liftStatsList();
+    const latest = lifts.length
+      ? lifts.reduce((best, item) => (item.last.date > best.last.date ? item : best))
+      : null;
+    // La tuile compte la semaine entière, pastilles comprises — pas seulement
+    // les jours déjà passés, sinon le total affiché contredit les pastilles.
+    const monday = mondayOfWeek();
+    const initials = ["D", "L", "M", "M", "J", "V", "S"];
+    const pills = [];
+    let planned = 0;
+    let done = 0;
+    for (let i = 0; i < 7; i++) {
+      const key = addDaysKey(monday, i);
+      if (!programActive(key)) continue;
+      const session = programSessionFor(key);
+      if (!session || session.kind === "repos") continue;
+      const entry = journalEntry(key);
+      const logged = (entry?.workouts || []).length > 0;
+      const completion = entry?.evening?.touched ? entry.evening.completion : null;
+      const isDone = logged || completion === "complete" || completion === "adaptee";
+      const pillState = isDone ? "done" : key === dateKey() ? "today" : key < dateKey() ? "missed" : "";
+      planned += 1;
+      if (isDone) done += 1;
+      pills.push(`<span class="week-pill ${pillState}">${initials[new Date(key).getDay()]}</span>`);
+    }
+    const weekPct = planned ? Math.round((done / planned) * 100) : 0;
+
+    return `
+      <div class="bento-row">
+        <section class="bento-tile tall">
+          <span class="bento-label">Dernière performance</span>
+          ${
+            latest
+              ? `<div class="bento-perf">
+                  <strong>${escapeHtml(latest.name)}</strong>
+                  <span class="bento-value">${frNumber(latest.last.weight, 0)}<em>kg × ${escapeHtml(String(latest.last.reps))}</em></span>
+                </div>
+                <span class="bento-sub ${latest.trendTone}">${escapeHtml(latest.trend)} · ${escapeHtml(formatShortDate(latest.last.date))}</span>`
+              : `<div class="bento-perf"><strong>Aucune série enregistrée</strong></div>
+                <span class="bento-sub">Les séries validées en séance alimentent cette tuile.</span>`
+          }
+        </section>
+        <section class="bento-tile tall">
+          <span class="bento-label">Objectif semaine</span>
+          <div class="bento-perf">
+            <div class="week-pills">${pills.join("") || `<span class="week-pill"></span>`}</div>
+            <span class="bento-value">${done}/${planned}<em>séances</em></span>
+          </div>
+          <span class="bento-track"><span style="width:${weekPct}%"></span></span>
+        </section>
+      </div>
+    `;
+  }
+
   function renderToday() {
     const readiness = calculateReadiness();
     const decision = makeCoachDecision(readiness);
@@ -6903,19 +7159,29 @@
       // l'onglet Séance — les sept cartes dupliquées ici en faisaient une page
       // de 14 000 pixels que personne ne pouvait parcourir.
       summary: `
-        <div class="today-grid">
-          <div class="page-grid">
-            ${RingsRow(readiness)}
-            ${QuickSessionCard()}
-            ${CoachDecisionCard(decision)}
-            ${MissingCard()}
-            ${GaugeGrid()}
-            ${DeloadCard(signalsResult)}
-          </div>
-          <aside class="page-grid">
-            ${SignalsCard(signalsResult)}
-            ${factors}
-          </aside>
+        <div class="page-grid today-summary">
+          <p class="today-date">${escapeHtml(todayDateLabel())}</p>
+          ${HeroSessionCard()}
+          ${BentoMetrics()}
+          ${EnergyStrip()}
+          ${ReadinessPanel(readiness)}
+          ${BentoRecap()}
+          ${CoachDecisionCard(decision)}
+          ${MissingCard()}
+          ${DeloadCard(signalsResult)}
+          <button type="button" class="more-toggle" data-action="toggle-summary-more">${
+            state.summaryMoreOpen ? "Masquer" : "Plus"
+          } — séance déclarée, indicateurs, signaux du bloc, facteurs de récupération ›</button>
+          ${
+            state.summaryMoreOpen
+              ? `<div class="page-grid">
+                  ${QuickSessionCard()}
+                  ${GaugeGrid()}
+                  ${SignalsCard(signalsResult)}
+                  ${factors}
+                </div>`
+              : ""
+          }
         </div>
       `,
       checkin: `
@@ -7941,7 +8207,172 @@
     `;
   }
 
+  // ============================================================
+  // v9.3.0 — Bibliothèque de mouvements (maquette Stitch
+  // « bibliothèque_de_mouvements »). Les 39 fiches existaient depuis la
+  // v8.4.0 mais n'étaient ouvrables que depuis un exercice déjà prescrit :
+  // impossible de parcourir le catalogue. Cet écran les expose toutes, avec
+  // recherche et filtre par groupe musculaire.
+  //
+  // La maquette montre une photo et un badge de niveau par mouvement. Aucune
+  // des deux données n'existe : la vignette est donc la silhouette musculaire
+  // (déjà dynamique, hors ligne, gratuite) et le badge dit ce qui est vrai,
+  // à savoir si le mouvement est au programme du bloc en cours.
+  // ============================================================
+
+  // Noms de tous les exercices que le Bloc 1 peut prescrire, tests et
+  // pliométrie compris. Sert au badge « Au programme ».
+  function blocExerciseNames() {
+    const names = new Set();
+    Object.values(BLOC1.days).forEach((session) => {
+      (session.exercises || []).forEach((item) => names.add(item.name));
+      if (session.extraExercise) names.add(session.extraExercise.name);
+    });
+    Object.values(PLYO).forEach((tier) => tier.forEach((item) => names.add(item.name)));
+    names.add("Élévations mollet unijambe (test)");
+    names.add("Sautillements unipodaux (test)");
+    return names;
+  }
+
+  // Comparaison insensible à la casse et aux accents : « developpe » doit
+  // trouver « Développé couché ».
+  function searchKey(value) {
+    return String(value)
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function libraryEntries() {
+    const inBloc = blocExerciseNames();
+    return Object.keys(EXERCISE_LIBRARY)
+      .map((name) => {
+        const muscles = musclesOf(name);
+        const primary = muscles?.primary || [];
+        const groups = [...new Set(primary.map((id) => BODY_REGIONS[id]?.label).filter(Boolean))];
+        return {
+          name,
+          sheet: EXERCISE_LIBRARY[name],
+          muscles,
+          groups,
+          inBloc: inBloc.has(name),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  }
+
+  function libraryGroups(entries) {
+    const counts = new Map();
+    entries.forEach((entry) => entry.groups.forEach((label) => counts.set(label, (counts.get(label) || 0) + 1)));
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "fr"));
+  }
+
+  function LibraryCard(entry) {
+    const groups = entry.groups.join(" · ");
+    return `
+      <button
+        type="button"
+        class="lib-card"
+        data-action="open-exercise"
+        data-exercise="${escapeHtml(entry.name)}"
+        data-lib-name="${escapeHtml(searchKey(entry.name))}"
+        data-lib-groups="${escapeHtml(entry.groups.map(searchKey).join("|"))}"
+      >
+        <span class="lib-thumb">
+          ${entry.muscles ? MuscleMap(entry.muscles.primary, entry.muscles.secondary) : ""}
+        </span>
+        <span class="lib-body">
+          <strong>${escapeHtml(entry.name)}</strong>
+          <span class="lib-meta">
+            ${groups ? `<span class="lib-groups">${escapeHtml(groups)}</span>` : ""}
+            <span class="lib-badge ${entry.inBloc ? "on" : ""}">${entry.inBloc ? "Au programme" : "Hors bloc"}</span>
+          </span>
+          <span class="lib-rx">${escapeHtml(entry.sheet.rx || "")}</span>
+        </span>
+        <span class="lib-open">Fiche ›</span>
+      </button>
+    `;
+  }
+
+  function renderLibrary() {
+    const entries = libraryEntries();
+    const groups = libraryGroups(entries);
+    return `
+      <div class="page-grid library-page">
+        <div class="lib-search">
+          ${icon("search")}
+          <input
+            type="search"
+            id="library-search"
+            data-library-search
+            value="${escapeHtml(state.librarySearch || "")}"
+            placeholder="Rechercher un mouvement…"
+            autocomplete="off"
+            autocorrect="off"
+            spellcheck="false"
+            aria-label="Rechercher un mouvement"
+          />
+        </div>
+        <button type="button" class="lib-map-button" data-action="goto-muscle-map">Carte musculaire de la semaine</button>
+        <div class="lib-filters" role="group" aria-label="Filtrer par groupe musculaire">
+          <button type="button" class="lib-chip" data-lib-filter="">Tous <em>${entries.length}</em></button>
+          ${groups
+            .map(
+              ([label, count]) =>
+                `<button type="button" class="lib-chip" data-lib-filter="${escapeHtml(searchKey(label))}">${escapeHtml(label)} <em>${count}</em></button>`
+            )
+            .join("")}
+        </div>
+        <p class="lib-count" id="library-count"></p>
+        <div class="lib-grid">
+          ${entries.map(LibraryCard).join("")}
+        </div>
+        <p class="lib-empty" id="library-empty" hidden>Aucun mouvement ne correspond. Efface la recherche ou choisis « Tous ».</p>
+      </div>
+    `;
+  }
+
+  // Recherche et filtre s'appliquent directement sur le DOM : re-rendre à
+  // chaque frappe reconstruirait le champ et ferait perdre le focus (et le
+  // clavier iOS avec lui).
+  function applyLibraryFilter() {
+    const grid = document.querySelector(".lib-grid");
+    if (!grid) return;
+    const query = searchKey(state.librarySearch || "").trim();
+    const filter = state.libraryFilter || "";
+    let shown = 0;
+    grid.querySelectorAll(".lib-card").forEach((card) => {
+      const matchesQuery = !query || card.dataset.libName.includes(query);
+      const matchesFilter = !filter || card.dataset.libGroups.split("|").includes(filter);
+      const visible = matchesQuery && matchesFilter;
+      card.hidden = !visible;
+      if (visible) shown += 1;
+    });
+    document.querySelectorAll("[data-lib-filter]").forEach((chip) => {
+      chip.classList.toggle("active", chip.dataset.libFilter === filter);
+    });
+    const count = document.getElementById("library-count");
+    if (count) count.textContent = `${shown} mouvement${shown > 1 ? "s" : ""} sur ${grid.children.length}`;
+    const empty = document.getElementById("library-empty");
+    if (empty) empty.hidden = shown > 0;
+  }
+
   function renderProgram() {
+    const subnav = `
+      <div class="today-subnav" role="tablist" aria-label="Vues Programme">
+        ${programViews
+          .map(
+            (view) =>
+              `<button type="button" class="today-subnav-button ${state.activeProgramView === view.id ? "active" : ""}" data-program-view="${view.id}">${escapeHtml(view.label)}</button>`
+          )
+          .join("")}
+      </div>
+    `;
+    const pane = state.activeProgramView === "library" ? renderLibrary() : renderProgramWeek();
+    return `<div class="page-grid">${subnav}${pane}</div>`;
+  }
+
+  function renderProgramWeek() {
     if (programStartDate()) {
       return renderRealProgram();
     }
@@ -8052,6 +8483,56 @@
     `;
   }
 
+  // ============================================================
+  // v9.3.0 — Tuiles de records (maquette Stitch « journal d'historique &
+  // records »). Les chiffres existaient déjà, alignés dans un tableau où
+  // personne ne les regardait. Ils passent devant.
+  //
+  // La maquette affiche un 1RM brut. Ici c'est un 1RM *estimé* (Epley) à
+  // partir de la meilleure série enregistrée : la série réelle est écrite en
+  // dessous pour qu'aucun chiffre ne passe pour une performance réalisée.
+  // ============================================================
+  function RecordTiles(lifts) {
+    const tiles = [...lifts].sort((a, b) => b.best.e1rm - a.best.e1rm).slice(0, 6);
+    if (!tiles.length) return "";
+    return `
+      <section class="records-block">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Records personnels</p>
+            <h2 class="section-title">Tes meilleures séries</h2>
+          </div>
+          ${StatusBadge(`${lifts.length} suivi${lifts.length > 1 ? "s" : ""}`, "info")}
+        </div>
+        <div class="records-grid">
+          ${tiles
+            .map((lift) => {
+              // Un mouvement au poids de corps a une charge nulle : afficher
+              // « 0 kg » en record serait un contresens. C'est le nombre de
+              // répétitions qui fait la performance.
+              const bodyweight = !(Number(lift.best.weight) > 0);
+              const value = bodyweight ? `${lift.best.reps} reps` : formatE1rm(lift.best.e1rm);
+              const detail = bodyweight
+                ? "Poids de corps · meilleure série"
+                : `Meilleure série ${String(lift.best.weight).replace(".", ",")} kg × ${lift.best.reps}`;
+              return `
+                <article class="record-tile">
+                  <span class="record-name">${escapeHtml(lift.name)}</span>
+                  <span class="record-value">${escapeHtml(value)}</span>
+                  <span class="record-set">${escapeHtml(detail)}</span>
+                  <span class="record-foot">
+                    <em class="${lift.stagnant ? "watch" : lift.trendTone}">${escapeHtml(lift.stagnant ? "Stagnation" : lift.trend)}</em>
+                    <span>${escapeHtml(formatShortDate(lift.best.date))}</span>
+                  </span>
+                </article>`;
+            })
+            .join("")}
+        </div>
+        <p class="fineprint">1RM estimé par la formule d'Epley, jamais mesuré en salle. Il sert à calibrer les charges, pas à annoncer un maxi.</p>
+      </section>
+    `;
+  }
+
   function renderPerformance() {
     const realLifts = liftStatsList();
     const running = runningSummary();
@@ -8068,6 +8549,7 @@
 
       return `
         <div class="page-grid">
+          ${realLifts.length ? RecordTiles(realLifts) : ""}
           ${VolumeCard()}
           ${realLifts.length ? RealLiftsSection(realLifts) : ""}
           ${realLifts.length ? RealStagnationSection(realLifts) : ""}
@@ -8644,6 +9126,7 @@
       if (messages) messages.scrollTop = messages.scrollHeight;
     });
     maybeAnimateDonuts();
+    applyLibraryFilter();
     applyPendingFocus();
   }
 
@@ -8708,6 +9191,14 @@
       return;
     }
 
+    const summaryMoreBtn = event.target.closest('[data-action="toggle-summary-more"]');
+    if (summaryMoreBtn) {
+      state.summaryMoreOpen = !state.summaryMoreOpen;
+      persist();
+      render();
+      return;
+    }
+
     const focusBtn = event.target.closest('[data-action="focus-exercise"]');
     if (focusBtn && focusBtn.dataset.name) {
       state.focusExercise = focusBtn.dataset.name;
@@ -8733,6 +9224,37 @@
       state.activeProfileView = profileViewButton.dataset.profileView;
       persist();
       render();
+      return;
+    }
+
+    const programViewButton = event.target.closest("[data-program-view]");
+    if (programViewButton) {
+      state.activeProgramView = programViewButton.dataset.programView;
+      persist();
+      render();
+      return;
+    }
+
+    // Filtre de la bibliothèque : on ne re-rend pas, on masque dans le DOM,
+    // sinon le champ de recherche perdrait son focus et le clavier iOS
+    // se refermerait à chaque appui sur une puce.
+    const libFilterButton = event.target.closest("[data-lib-filter]");
+    if (libFilterButton) {
+      const value = libFilterButton.dataset.libFilter;
+      state.libraryFilter = state.libraryFilter === value ? "" : value;
+      persistSoon();
+      applyLibraryFilter();
+      return;
+    }
+
+    if (event.target.closest('[data-action="goto-muscle-map"]')) {
+      gotoTarget("health");
+      return;
+    }
+
+    if (event.target.closest('[data-action="open-library"]')) {
+      state.activeProgramView = "library";
+      gotoTarget("program");
       return;
     }
 
@@ -9359,6 +9881,14 @@
 
   function handleInput(event) {
     const target = event.target;
+
+    // Recherche de la bibliothèque : filtrage direct du DOM, sans re-rendu.
+    if (target.dataset.librarySearch !== undefined) {
+      state.librarySearch = target.value;
+      persistSoon();
+      applyLibraryFilter();
+      return;
+    }
 
     // Journal des séances : la saisie brouillon est désormais sauvegardée à la frappe.
     if (target.dataset.draftEx !== undefined || target.dataset.draftCourse !== undefined) {

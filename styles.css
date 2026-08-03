@@ -4746,3 +4746,765 @@ body.light .workload-track { background: rgba(0, 0, 0, 0.07); }
 @media (max-width: 430px) {
   .today-subnav-button { padding-right: 5px; padding-left: 5px; font-size: 0.75rem; }
 }
+
+/* ==========================================================================
+   v9.3.0 — Synthèse au format de la maquette Stitch « dashboard_aujourd_hui ».
+   Une carte héros pour la séance, deux bentos de tuiles, un bandeau d'énergie
+   et un anneau de récupération. La hiérarchie vient de la taille des chiffres
+   et du contraste, pas de l'accumulation de cartes de même poids.
+   ========================================================================== */
+
+.today-summary {
+  gap: 14px;
+}
+
+.today-date {
+  margin: 0;
+  color: var(--subtle);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+/* ---- Carte héros de la séance ---- */
+
+.hero-session {
+  position: relative;
+  overflow: hidden;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, var(--surface) 0%, var(--bg-strong) 100%);
+}
+
+.hero-session-glyph {
+  position: absolute;
+  top: -26px;
+  right: -26px;
+  opacity: 0.05;
+  pointer-events: none;
+}
+
+.hero-session-glyph .nav-icon {
+  width: 132px;
+  height: 132px;
+  stroke-width: 1.4;
+}
+
+.hero-session-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.hero-status {
+  display: inline-block;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--volt);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.hero-session.rest .hero-status {
+  background: var(--indigo-soft);
+  color: var(--indigo);
+}
+
+.hero-duration {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-title {
+  position: relative;
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 1.94rem;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.hero-focus {
+  position: relative;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.hero-chips {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.hero-chip {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hero-cta {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 18px;
+  padding: 15px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--volt);
+  color: var(--volt-ink);
+  font-size: 0.94rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.15s ease;
+}
+
+.hero-cta .nav-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.hero-cta:active {
+  transform: scale(0.985);
+  filter: brightness(0.94);
+}
+
+/* ---- Bentos de tuiles ---- */
+
+.bento-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.bento-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, var(--surface) 0%, var(--bg-strong) 100%);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+
+.bento-tile.tall {
+  justify-content: space-between;
+  min-height: 132px;
+  cursor: default;
+}
+
+button.bento-tile:active {
+  transform: scale(0.985);
+  border-color: var(--line-strong);
+}
+
+.bento-label {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.bento-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--volt);
+  font-variant-numeric: tabular-nums;
+}
+
+.bento-value.empty {
+  font-family: var(--font);
+  font-size: 1.1rem;
+  font-weight: 650;
+  color: var(--subtle);
+}
+
+.bento-value em {
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.bento-track {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bento-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--volt);
+}
+
+.bento-segments {
+  display: flex;
+  gap: 4px;
+}
+
+.bento-segments i {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.bento-segments i.on {
+  background: var(--volt);
+}
+
+.bento-sub {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.bento-sub.good { color: color-mix(in srgb, var(--green) 78%, var(--text)); }
+.bento-sub.watch { color: color-mix(in srgb, var(--orange) 80%, var(--text)); }
+
+.bento-perf {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bento-perf strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.week-pills {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.week-pill {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  color: var(--subtle);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.week-pill.done {
+  background: var(--volt);
+  border-color: var(--volt);
+  color: var(--volt-ink);
+}
+
+.week-pill.today {
+  border-color: var(--volt);
+  color: var(--volt);
+}
+
+.week-pill.missed {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+/* ---- Bandeau d'énergie ---- */
+
+.energy-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, var(--surface) 0%, var(--bg-strong) 100%);
+}
+
+.energy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.energy-verdict {
+  font-size: 0.88rem;
+  font-weight: 750;
+  color: var(--volt);
+}
+
+.energy-verdict.faible { color: var(--orange); }
+.energy-verdict.empty { color: var(--subtle); font-weight: 600; }
+
+.energy-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 62px;
+}
+
+.energy-bar {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 6px;
+}
+
+.energy-bar i {
+  display: block;
+  min-height: 4px;
+  border-radius: 4px 4px 2px 2px;
+  background: var(--line-strong);
+}
+
+.energy-bar.empty i {
+  background: var(--line);
+}
+
+.energy-bar.current i {
+  background: var(--volt);
+  box-shadow: 0 -4px 12px rgba(163, 230, 53, 0.2);
+}
+
+.energy-bar em {
+  font-size: 0.6rem;
+  font-style: normal;
+  font-weight: 700;
+  text-align: center;
+  color: var(--subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.energy-bar.current em {
+  color: var(--volt);
+}
+
+.energy-bar.is-today em {
+  color: var(--text);
+}
+
+.energy-bar.current em {
+  color: var(--volt);
+}
+
+/* ---- Panneau de récupération ---- */
+
+.readiness-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.readiness-panel {
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--volt) 26%, var(--line));
+  transition: transform 0.12s ease;
+}
+
+button.readiness-panel:active {
+  transform: scale(0.99);
+}
+
+.readiness-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.readiness-text h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.readiness-text p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.readiness-ring {
+  flex: 0 0 auto;
+  width: 88px;
+  max-width: 88px;
+}
+
+.readiness-ring .ring-value strong {
+  font-size: 1.35rem;
+}
+
+@media (max-width: 380px) {
+  .hero-title { font-size: 1.7rem; }
+  .readiness-ring { width: 76px; max-width: 76px; }
+  .bento-value { font-size: 1.32rem; }
+}
+
+/* ==========================================================================
+   v9.3.0 — Bibliothèque de mouvements (maquette Stitch).
+   Vignette = silhouette musculaire : dynamique, hors ligne, aucun fichier
+   image à livrer. La maquette montrait des photos qui n'existent pas.
+   ========================================================================== */
+
+.library-page {
+  gap: 12px;
+}
+
+.lib-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.lib-search .nav-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.lib-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 16px;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.lib-search input::placeholder {
+  color: var(--subtle);
+}
+
+.lib-map-button {
+  width: 100%;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--volt) 28%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--green-soft);
+  color: var(--volt);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.lib-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.lib-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.lib-chip {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.lib-chip em {
+  font-style: normal;
+  font-weight: 800;
+  opacity: 0.55;
+  margin-left: 4px;
+}
+
+.lib-chip.active {
+  background: var(--volt);
+  border-color: var(--volt);
+  color: var(--volt-ink);
+}
+
+.lib-count {
+  margin: 2px 0 0;
+  color: var(--subtle);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lib-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.lib-card {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, var(--surface) 0%, var(--bg-strong) 100%);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+
+.lib-card[hidden] {
+  display: none;
+}
+
+.lib-card:active {
+  transform: scale(0.99);
+  border-color: var(--line-strong);
+}
+
+.lib-thumb {
+  position: relative;
+  display: block;
+  padding: 6px 4px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.lib-thumb .muscle-map {
+  width: 100%;
+}
+
+.lib-thumb .muscle-caption {
+  display: none;
+}
+
+.lib-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.lib-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--subtle);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lib-badge.on {
+  background: var(--green-soft);
+  border-color: color-mix(in srgb, var(--volt) 26%, var(--line));
+  color: var(--volt);
+}
+
+.lib-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lib-body strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.lib-groups {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--volt);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lib-groups::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--volt);
+}
+
+.lib-rx {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.lib-open {
+  flex: 0 0 auto;
+  color: var(--volt);
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.lib-empty {
+  margin: 0;
+  padding: 22px 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-align: center;
+}
+
+@media (max-width: 380px) {
+  .lib-card { grid-template-columns: 70px minmax(0, 1fr); }
+  .lib-open { display: none; }
+}
+
+/* ==========================================================================
+   v9.3.0 — Tuiles de records (maquette Stitch).
+   ========================================================================== */
+
+.records-block {
+  display: grid;
+  gap: 12px;
+}
+
+.records-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.record-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, var(--surface) 0%, var(--bg-strong) 100%);
+}
+
+.record-name {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.record-value {
+  font-family: var(--font-display);
+  font-size: 1.44rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--volt);
+  font-variant-numeric: tabular-nums;
+}
+
+.record-set {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.record-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: 0.7rem;
+}
+
+.record-foot em {
+  font-style: normal;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.record-foot em.good { color: color-mix(in srgb, var(--green) 80%, var(--text)); }
+.record-foot em.watch { color: color-mix(in srgb, var(--orange) 82%, var(--text)); }
+
+.record-foot span {
+  color: var(--subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 340px) {
+  .records-grid { grid-template-columns: minmax(0, 1fr); }
+}
