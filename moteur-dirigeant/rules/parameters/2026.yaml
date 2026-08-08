@@ -1,0 +1,885 @@
+# =============================================================================
+# RÉFÉRENTIEL DE PARAMÈTRES — MILLÉSIME 2026
+# Moteur d'optimisation patrimoniale du dirigeant
+# -----------------------------------------------------------------------------
+# Toute constante réglementaire du moteur vit ici. Aucun taux, seuil ou plafond
+# ne doit être écrit en dur dans engine/ ou ui/.
+# Chaque bloc porte : valeur, date d'effet, source, date de vérification,
+# niveau de confiance (high / medium / low) et, si besoin, une note.
+#
+# Niveaux de confiance :
+#   high   = texte primaire lu (Légifrance / BOFiP) ou 2+ sources officielles
+#   medium = 2+ sources professionnelles concordantes, texte primaire non lu
+#   low    = 1 seule source, ou divergence non tranchée -> le moteur bloque
+#            toute recommandation automatique qui en dépend de façon matérielle
+# =============================================================================
+
+meta:
+  millesime: 2026
+  version_referentiel: "1.1.0"
+  last_verified: "2026-08-08"
+  verified_by: "cowork/legal-fiscal-grounding + audit croisé référentiel/moteur"
+  avertissement: >-
+    Référentiel construit pour un usage professionnel de conseil. Il ne se
+    substitue pas à la vérification par le conseiller sur source primaire au
+    moment de l'acte. Tout paramètre de confiance "low" ou "medium" doit être
+    confirmé avant remise d'une recommandation chiffrée à un client.
+
+# -----------------------------------------------------------------------------
+# 1. PLAFONDS ET RÉFÉRENCES GÉNÉRALES
+# -----------------------------------------------------------------------------
+references:
+  pass:
+    rule_id: REF_PASS_001
+    title: Plafond annuel de la sécurité sociale
+    valeurs:
+      2024: 46368
+      2025: 47100
+      2026: 48060
+    effective_from: "2026-01-01"
+    source_type: legislation
+    source_reference: "Arrêté du 22 décembre 2025 (JORFTEXT000053143451)"
+    source_url: "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000053143451"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  pmss:
+    rule_id: REF_PASS_002
+    title: Plafond mensuel de la sécurité sociale
+    valeurs:
+      2026: 4005
+    effective_from: "2026-01-01"
+    source_reference: "Arrêté du 22 décembre 2025"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  smic:
+    rule_id: REF_SMIC_001
+    title: SMIC horaire brut
+    horaire_1er_janvier_2026: 12.02
+    horaire_1er_juin_2026: 12.31
+    mensuel_35h_1er_janvier_2026: 1823.03
+    note: >-
+      Deux valeurs en 2026 (revalorisation automatique au 1er juin). Le moteur
+      retient la valeur du 1er janvier pour la validation des trimestres, qui
+      est figée par la loi pour toute l'année.
+    source_reference: "travail-emploi.gouv.fr / info.gouv.fr"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  trimestre_retraite:
+    rule_id: REF_TRIM_001
+    title: Revenu nécessaire pour valider un trimestre d'assurance vieillesse
+    formule: "150 x SMIC horaire au 1er janvier"
+    valeur_2026: 1803
+    plafond_annuel_trimestres: 4
+    source_reference: "Art. R.351-9 CSS ; L'Assurance Retraite"
+    last_verified: "2026-08-08"
+    confidence: high
+
+# -----------------------------------------------------------------------------
+# 2. RÉGIME SOCIAL DES TRAVAILLEURS NON SALARIÉS (TNS)
+#    Gérant majoritaire de SARL/EURL à l'IS, artisan, commerçant.
+#    Réforme de l'assiette sociale unique en vigueur.
+# -----------------------------------------------------------------------------
+social_tns:
+
+  assiette:
+    rule_id: SOCIAL_TNS_001
+    title: Assiette sociale unique des travailleurs indépendants
+    population: "Travailleurs indépendants non agricoles affiliés au régime général"
+    formule: |
+      R  = revenu professionnel brut ("super-brut")
+         = pour une société à l'IS : coût total supporté par la société au titre
+           du dirigeant, hors cotisations facultatives Madelin
+         = rémunération nette versée + cotisations et contributions sociales
+           obligatoires (y compris CSG/CRDS)
+      abattement = min( max( 26% x R ; plancher ) ; plafond )
+      A = R - abattement          <- assiette UNIQUE des cotisations ET de la CSG/CRDS
+    taux_abattement: 0.26
+    plancher_abattement_pct_pass: 0.0176   # 845,86 € en 2026
+    plafond_abattement_pct_pass: 1.30      # 62 478 € en 2026
+    effective_from: "2025-01-01"
+    source_type: legislation
+    source_reference: "Art. L.136-3 III et L.131-6 CSS ; art. D.136-5 CSS créé par décret n° 2024-688 du 5 juillet 2024"
+    source_url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000048838330"
+    last_verified: "2026-08-08"
+    confidence: high
+    note: >-
+      La réforme supprime le calcul circulaire cotisations/assiette. L'abattement
+      forfaitaire de 26 % remplace la déduction des cotisations réellement payées.
+      Conséquence pour le moteur : le calcul devient déterministe et non itératif.
+
+  maladie_maternite:
+    rule_id: SOCIAL_TNS_002
+    title: Cotisation maladie-maternité
+    assiette: "A (totalité, non plafonnée)"
+    mode: >-
+      Deux étages, art. D.621-1 CSS : taux de base 8,50 % sur la fraction de
+      l'assiette n'excédant pas 3 PASS, 6,50 % sur la fraction au-delà (taux
+      MARGINAL sur l'excédent, et non taux unique sur la totalité). Le taux
+      applicable à la fraction sous 3 PASS fait en outre l'objet d'une réduction
+      dégressive lorsque l'assiette TOTALE est inférieure à 3 PASS (art. D.621-2
+      CSS) : dans cette zone le taux réduit s'applique à la totalité de l'assiette.
+      La cotisation résultante est continue et croissante en tout point : il
+      n'existe aucune discontinuité ni « falaise » à 3 PASS.
+    taux_base: 0.0850
+    seuil_fraction_superieure_pct_pass: 3.00
+    taux_fraction_superieure: 0.0650
+    bareme_reduction_pct_pass:  # art. D.621-2 : réduction du taux de base sous 3 PASS
+      - { de: 0.00, a: 0.20, taux_debut: 0.000, taux_fin: 0.000 }
+      - { de: 0.20, a: 0.40, taux_debut: 0.000, taux_fin: 0.015 }
+      - { de: 0.40, a: 0.60, taux_debut: 0.015, taux_fin: 0.040 }
+      - { de: 0.60, a: 1.10, taux_debut: 0.040, taux_fin: 0.065 }
+      - { de: 1.10, a: 2.00, taux_debut: 0.065, taux_fin: 0.077 }
+      - { de: 2.00, a: 3.00, taux_debut: 0.077, taux_fin: 0.085 }
+    droits_generes: "Prestations en nature maladie-maternité (non contributives, non proportionnelles)"
+    caractere: "solidarite"
+    source_reference: "Art. D.621-1 et D.621-2 CSS (décret n° 2024-688 du 5 juillet 2024)"
+    source_url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049904610"
+    last_verified: "2026-08-08"
+    confidence: high
+    note: >-
+      DIVERGENCE LEVÉE le 2026-08-08 sur texte primaire. D.621-1 fixe bien le
+      décrochage à 3 PASS (et non 5 PASS), mais 6,50 % est un taux marginal sur
+      la seule fraction excédentaire. Le référentiel antérieur l'appliquait à la
+      totalité de l'assiette, ce qui fabriquait une discontinuité descendante
+      inexistante. Aucune cotisation minimale maladie n'existe depuis la LFSS
+      2017 : le taux est nul sous 20 % du PASS (D.621-2, 1°).
+
+  indemnites_journalieres:
+    rule_id: SOCIAL_TNS_003
+    title: Cotisation indemnités journalières
+    assiette: "A plafonnée à 5 PASS"
+    taux: 0.0050
+    assiette_minimale_pct_pass: 0.40
+    plafond_pct_pass: 5.0
+    cotisation_minimale_eur: 96
+    plafond_ij_journaliere_pct_pass: 1.0   # 1 PASS / 730 = 65,84 € au 01/01/2026
+    diviseur_ij: 730
+    droits_generes: "Indemnités journalières maladie, plafonnées à 1/730 de 1 PASS/jour (65,84 € au 01/01/2026)"
+    caractere: "contributif_partiel"
+    source_reference: "Art. D.621-3 CSS (taux 0,50 %, assiette plafonnée à 5 PASS, minimum 40 % PASS) ; ameli.fr — IJ artisans-commerçants 2026"
+    source_url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049904537"
+    last_verified: "2026-08-08"
+    confidence: high
+    note: >-
+      CORRECTION 2026-08-08 : le plafond d'IJ était fixé à 3 PASS/730, valeur qui
+      ne vaut que pour les professions libérales réglementées (L.640-1). Pour les
+      artisans et commerçants (L.631-1), population modélisée par le moteur, le
+      plafond est de 1 PASS/730, soit 65,84 € bruts par jour en 2026. La
+      valorisation des droits générés était surestimée d'un facteur 3.
+
+  retraite_base:
+    rule_id: SOCIAL_TNS_004
+    title: Cotisation vieillesse de base
+    tranches:
+      - { libelle: "T1", assiette: "A plafonnée à 1 PASS", taux: 0.1787 }
+      - { libelle: "déplafonnée", assiette: "A totalité", taux: 0.0072 }
+    cotisation_minimale_eur: 967
+    assiette_minimale: "450 x SMIC horaire (art. D.633-2 CSS)"
+    droits_generes: "Trimestres + report au compte pour le revenu annuel moyen (25 meilleures années, plafonné à 1 PASS)"
+    caractere: "contributif_sous_1_pass"
+    source_reference: "Art. D.633-2 CSS ; barème URSSAF 2026 (taux relevés au 1er janvier 2025 par le décret n° 2024-688)"
+    last_verified: "2026-08-08"
+    confidence: medium
+    note: >-
+      DIVERGENCE MINEURE : un support d'expert-comptable maintient 17,15 %.
+      Cinq sources professionnelles 2026 convergent sur 17,87 % + 0,72 %.
+      Valeur retenue : 17,87 % / 0,72 %.
+
+  retraite_complementaire_rci:
+    rule_id: SOCIAL_TNS_005
+    title: Retraite complémentaire des indépendants (RCI)
+    tranches:
+      - { libelle: "T1", de_pct_pass: 0.0, a_pct_pass: 1.0, taux: 0.081 }
+      - { libelle: "T2", de_pct_pass: 1.0, a_pct_pass: 4.0, taux: 0.091 }
+      - { libelle: "au-delà", de_pct_pass: 4.0, a_pct_pass: null, taux: 0.0 }
+    droits_generes: "Points RCI"
+    caractere: "contributif"
+    source_reference: "Barème URSSAF / SSI 2026 (taux relevés au 1er janvier 2025)"
+    last_verified: "2026-08-08"
+    confidence: medium
+
+  invalidite_deces:
+    rule_id: SOCIAL_TNS_006
+    title: Cotisation invalidité-décès
+    assiette: "A plafonnée à 1 PASS"
+    taux: 0.0130
+    assiette_minimale_pct_pass: 0.115
+    cotisation_minimale_eur: 72
+    droits_generes: "Pension d'invalidité, capital décès"
+    caractere: "contributif_partiel"
+    source_reference: "Art. D.632-1 CSS ; barème URSSAF 2026"
+    last_verified: "2026-08-08"
+    confidence: medium
+
+  allocations_familiales:
+    rule_id: SOCIAL_TNS_007
+    title: Cotisation allocations familiales
+    assiette: "A (totalité)"
+    mode: "taux unique applicable à la totalité de l'assiette"
+    bareme_pct_pass:
+      - { de: 0.00, a: 1.10, taux_debut: 0.000, taux_fin: 0.000 }
+      - { de: 1.10, a: 1.40, taux_debut: 0.000, taux_fin: 0.031 }
+      - { de: 1.40, a: null, taux_debut: 0.031, taux_fin: 0.031 }
+    droits_generes: "Aucun droit personnel proportionnel"
+    caractere: "solidarite"
+    source_reference: "Art. D.242-11 CSS ; barème URSSAF 2026"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  csg_crds:
+    rule_id: SOCIAL_TNS_008
+    title: CSG et CRDS sur revenus d'activité indépendante
+    assiette: "A (assiette unique, non plafonnée)"
+    taux_csg: 0.0920
+    taux_crds: 0.0050
+    taux_total: 0.0970
+    part_csg_deductible: 0.0680
+    droits_generes: "Aucun"
+    caractere: "solidarite"
+    source_reference: "Art. L.136-3 et L.136-8 I 1° CSS"
+    source_url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000054336623"
+    last_verified: "2026-08-08"
+    confidence: high
+    note: >-
+      La hausse de CSG de la LFSS 2026 vise les REVENUS DU CAPITAL (art. L.136-6
+      et L.136-7 CSS), pas les revenus d'activité. Le taux d'activité reste 9,7 %.
+      Confiance relevée à high le 2026-08-08 : taux fixés par l'art. L.136-8 I 1°
+      CSS lu sur Légifrance, inchangés depuis 2018.
+      La part déductible de 6,8 % n'a pas été reconfirmée explicitement pour 2026
+      dans les sources consultées : confidence medium.
+
+  formation_professionnelle:
+    rule_id: SOCIAL_TNS_009
+    title: Contribution à la formation professionnelle
+    assiette: "1 PASS (forfaitaire)"
+    taux_commercant: 0.0025
+    taux_artisan: 0.0029
+    droits_generes: "Droit à la formation professionnelle"
+    source_reference: "Art. L.6331-48 code du travail"
+    last_verified: "2026-08-08"
+    confidence: medium
+
+  dividendes_seuil_10:
+    rule_id: SOCIAL_TNS_010
+    title: Assujettissement aux cotisations TNS de la fraction de dividendes excédant 10 % du montant de référence
+    population: "Travailleur indépendant exerçant dans une société soumise à l'IS, son conjoint/partenaire, ses enfants mineurs"
+    texte: >-
+      Est réintégrée dans l'assiette sociale la part des dividendes et des
+      sommes versées en compte courant qui excède 10 % d'un montant de référence
+      constitué du capital social, primes d'émission incluses, détenu en toute
+      propriété ou en usufruit par ces mêmes personnes, et des sommes inscrites
+      dans leurs comptes courants d'associés.
+    montant_reference: "capital social libéré + primes d'émission + solde moyen annuel des comptes courants d'associés"
+    date_appreciation: "dernier jour de l'exercice précédant la distribution"
+    taux_seuil: 0.10
+    traitement_fraction_excedentaire: "intégrée dans R, donc soumise à l'abattement de 26 % puis à l'ensemble des cotisations et à la CSG/CRDS d'activité"
+    traitement_fraction_sous_seuil: "revenu de capitaux mobiliers de droit commun : PFU ou barème + prélèvements sociaux du capital"
+    source_type: legislation
+    source_reference: "Art. L.136-3 II 2° CSS ; modalités de calcul art. R.131-7 CSS"
+    source_url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000048838330"
+    last_verified: "2026-08-08"
+    confidence: high
+    note: >-
+      Le compte courant est retenu pour son SOLDE MOYEN ANNUEL (moyenne des
+      soldes mensuels moyens), pas pour son solde ponctuel. Erreur fréquente.
+
+  prise_en_charge_cotisations_par_societe:
+    rule_id: SOCIAL_TNS_011
+    title: Prise en charge par la société des cotisations personnelles du dirigeant TNS
+    qualification: >-
+      La prise en charge par la société des cotisations sociales personnelles du
+      gérant constitue un complément de rémunération. Elle est déductible du
+      résultat de la société au même titre que la rémunération, et elle entre
+      dans le revenu professionnel du dirigeant.
+    effet_moteur: >-
+      Sous le régime de l'assiette unique post-réforme, la prise en charge est
+      DÉJÀ intégrée : le "revenu brut" R correspond au coût total supporté par
+      la société, que les cotisations soient payées par la société ou prélevées
+      par le dirigeant sur sa rémunération. Il n'y a donc PAS d'effet de boucle
+      supplémentaire, et PAS de gain mécanique à la prise en charge.
+    confidence: medium
+    statut_juridique: "interpretation_a_confirmer"
+    source_reference: "Doctrine constante sur la qualification de complément de rémunération ; conséquence tirée de la nouvelle assiette L.136-3 CSS"
+    last_verified: "2026-08-08"
+    note: >-
+      GARDE-FOU. Le moteur ne présente jamais la prise en charge comme un gain.
+      Il la traite comme une modalité de trésorerie, neutre en valeur globale,
+      et la classe en robustesse C (validation recommandée) tant que le
+      traitement n'est pas confirmé sur source primaire pour le cas d'espèce.
+      La fraction de cotisations afférente à des DIVIDENDES réintégrés fait
+      l'objet d'une qualification distincte et n'est pas automatisée.
+
+# -----------------------------------------------------------------------------
+# 3. RÉGIME SOCIAL DU DIRIGEANT ASSIMILÉ SALARIÉ
+#    Président de SAS/SASU, gérant minoritaire ou égalitaire de SARL.
+# -----------------------------------------------------------------------------
+social_assimile_salarie:
+
+  principe:
+    rule_id: SOCIAL_AS_001
+    title: Champ des cotisations du mandataire social assimilé salarié
+    exclusions:
+      assurance_chomage: "Non assujetti : le mandataire social sans contrat de travail ne relève pas de l'assurance chômage."
+      ags: "Non assujetti (garantie réservée aux titulaires d'un contrat de travail)."
+      reduction_generale: >-
+        Non éligible à la Réduction Générale Dégressive Unique (RGDU), qui exige
+        une affiliation obligatoire à l'assurance chômage. Depuis la fusion des
+        bandeaux maladie et famille au 1er janvier 2026, il n'existe plus aucune
+        voie d'accès à un taux réduit maladie (7 %) ou famille (3,45 %) :
+        le dirigeant assimilé salarié paie systématiquement les taux pleins.
+    source_reference: "urssaf.fr (réduction générale) ; economie.gouv.fr (RGDU) ; Bpifrance Création"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  cotisations:
+    rule_id: SOCIAL_AS_002
+    title: Barème des cotisations 2026 (dirigeant assimilé salarié)
+    # base : T1 = fraction du brut <= 1 PASS ; T2 = fraction entre 1 et 8 PASS ; TOT = totalité
+    lignes:
+      - { code: MAL,      libelle: "Maladie-maternité-invalidité-décès", base: TOT,  taux_salarial: 0.0000, taux_patronal: 0.1300, droits: "Prestations en nature", caractere: solidarite }
+      - { code: VIEIL_P,  libelle: "Vieillesse plafonnée",               base: T1,   taux_salarial: 0.0690, taux_patronal: 0.0855, droits: "Trimestres + salaire annuel moyen", caractere: contributif }
+      - { code: VIEIL_D,  libelle: "Vieillesse déplafonnée",             base: TOT,  taux_salarial: 0.0040, taux_patronal: 0.0211, droits: "Aucun droit proportionnel", caractere: solidarite }
+      - { code: AF,       libelle: "Allocations familiales",             base: TOT,  taux_salarial: 0.0000, taux_patronal: 0.0525, droits: "Aucun", caractere: solidarite }
+      - { code: ATMP,     libelle: "Accidents du travail",               base: TOT,  taux_salarial: 0.0000, taux_patronal: 0.0120, droits: "Couverture AT/MP", caractere: contributif_partiel, parametrable: true }
+      - { code: FNAL,     libelle: "FNAL (< 50 salariés)",               base: T1,   taux_salarial: 0.0000, taux_patronal: 0.0010, droits: "Aucun", caractere: solidarite }
+      - { code: CSA,      libelle: "Contribution solidarité autonomie",  base: TOT,  taux_salarial: 0.0000, taux_patronal: 0.0030, droits: "Aucun", caractere: solidarite }
+      - { code: AA_T1,    libelle: "Agirc-Arrco T1 (appelé)",            base: T1,   taux_salarial: 0.0315, taux_patronal: 0.0472, droits: "Points Agirc-Arrco (acquis sur le taux contractuel 6,20 %)", caractere: contributif }
+      - { code: AA_T2,    libelle: "Agirc-Arrco T2 (appelé)",            base: T2,   taux_salarial: 0.0864, taux_patronal: 0.1295, droits: "Points Agirc-Arrco (acquis sur le taux contractuel 17,00 %)", caractere: contributif }
+      - { code: CEG_T1,   libelle: "Contribution d'équilibre général T1", base: T1,  taux_salarial: 0.0086, taux_patronal: 0.0129, droits: "Aucun", caractere: solidarite }
+      - { code: CEG_T2,   libelle: "Contribution d'équilibre général T2", base: T2,  taux_salarial: 0.0108, taux_patronal: 0.0162, droits: "Aucun", caractere: solidarite }
+      - { code: CET,      libelle: "Contribution d'équilibre technique",  base: T1T2, taux_salarial: 0.0014, taux_patronal: 0.0021, droits: "Aucun", caractere: solidarite, condition: "brut > 1 PASS" }
+      - { code: APEC,     libelle: "APEC (cadres)",                       base: T1T2, taux_salarial: 0.00024, taux_patronal: 0.00036, droits: "Aucun", caractere: solidarite, parametrable: true }
+      - { code: FORM,     libelle: "Contribution à la formation professionnelle (< 11 salariés)", base: TOT, taux_salarial: 0.0, taux_patronal: 0.0055, droits: "Aucun", caractere: solidarite, effectif_max: 10 }
+      - { code: FORM11,   libelle: "Contribution à la formation professionnelle (>= 11 salariés)", base: TOT, taux_salarial: 0.0, taux_patronal: 0.0100, droits: "Aucun", caractere: solidarite, effectif_min: 11 }
+      - { code: TA,       libelle: "Taxe d'apprentissage",                base: TOT,  taux_salarial: 0.0, taux_patronal: 0.0068, droits: "Aucun", caractere: solidarite }
+      - { code: PEEC,     libelle: "Participation à l'effort de construction (>= 50 salariés)", base: TOT, taux_salarial: 0.0, taux_patronal: 0.0045, droits: "Aucun", caractere: solidarite, effectif_min: 50 }
+      - { code: VM,       libelle: "Versement mobilité",                  base: TOT,  taux_salarial: 0.0, taux_patronal: 0.0000, droits: "Aucun", caractere: solidarite, parametrable: true }
+    note_agirc_arrco: >-
+      CORRECTION 2026-08-08 : les taux Agirc-Arrco portés ici étaient les taux
+      CONTRACTUELS (6,20 % en T1, 17,00 % en T2) alors qu'ils sont étiquetés
+      « appelé ». Les taux effectivement précomptés sont les taux appelés, égaux
+      au contractuel majoré du taux d'appel de 127 % : 7,87 % en T1 (3,15 %
+      salarial / 4,72 % patronal) et 21,59 % en T2 (8,64 % / 12,95 %), répartis
+      selon la clé légale 40 / 60. Seul le taux contractuel génère des points de
+      retraite : la conversion en points reste faite sur 6,20 % / 17,00 % via
+      RETR_003. L'erreur sous-estimait les cotisations d'environ 21 %.
+    note_perimetre: >-
+      Le taux patronal global obtenu (de l'ordre de 39 % du brut pour une TPE)
+      est inférieur aux 42-45 % couramment cités pour un salarié : le mandataire
+      social ne supporte ni assurance chômage (4,05 %), ni AGS (0,25 %), et
+      n'accède pas à la RGDU. Le versement mobilité est laissé à 0 par défaut :
+      il dépend de la commune du siège et doit être renseigné.
+    source_reference: "Barème URSSAF 2026 (LégiSocial, tableau CAPEB) ; Chiffr'Agirc-Arrco 2026 ; décret n° 2025-1446 du 31 décembre 2025 (vieillesse déplafonnée à 2,11 %)"
+    source_url: "https://www.agirc-arrco.fr/storage/chiffrAA_2026_VF.pdf"
+    last_verified: "2026-08-08"
+    confidence: medium
+    note: >-
+      Le taux AT/MP est notifié individuellement par la Carsat : valeur par
+      défaut 1,20 %, à remplacer par le taux réel du dossier.
+      L'affiliation cadre (APEC) du mandataire n'est pas automatique.
+
+  csg_crds:
+    rule_id: SOCIAL_AS_003
+    title: CSG/CRDS sur revenus d'activité salariée
+    assiette: "98,25 % du brut jusqu'à 4 PASS, puis 100 % au-delà"
+    abattement_frais_pro: 0.0175
+    plafond_abattement_pct_pass: 4.0
+    taux_csg_deductible: 0.0680
+    taux_csg_non_deductible: 0.0240
+    taux_crds: 0.0050
+    source_reference: "Art. L.136-1-1 et L.136-8 CSS"
+    last_verified: "2026-08-08"
+    confidence: high
+
+# -----------------------------------------------------------------------------
+# 4. RETRAITE — PARAMÈTRES DE VALORISATION DES DROITS
+# -----------------------------------------------------------------------------
+retraite:
+  base_regime_general_et_independants:
+    rule_id: RETR_001
+    title: Retraite de base
+    taux_plein: 0.50
+    nb_annees_salaire_annuel_moyen: 25
+    plafond_salaire_porte_au_compte: "1 PASS de l'année considérée"
+    pension_max_annuelle: "50 % du PASS"
+    trimestres_taux_plein_reference: 172
+    source_reference: "Art. L.351-1 CSS ; L'Assurance Retraite"
+    last_verified: "2026-08-08"
+    confidence: medium
+    note: >-
+      DIVERGENCE SIGNALÉE : suite à la suspension de la réforme des retraites de
+      2023, le nombre de trimestres requis diffère selon la génération ET selon
+      que la liquidation intervient avant ou après le 1er septembre 2026. Le
+      moteur retient 172 par défaut et affiche l'hypothèse. Ne pas utiliser pour
+      un dirigeant proche de la liquidation sans relevé de carrière.
+
+  rci:
+    rule_id: RETR_002
+    title: Régime complémentaire des indépendants — points
+    valeur_achat_point: 21.726
+    valeur_service_point: 1.347
+    rendement_facial: 0.06200
+    source_reference: "Circulaire CNAV n° 2025-31 du 22 décembre 2025"
+    source_url: "https://legislation.lassuranceretraite.fr/Pdf/circulaire_cnav_2025_31_22122025.pdf"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  agirc_arrco:
+    rule_id: RETR_003
+    title: Agirc-Arrco — points
+    valeur_achat_point: 20.1877
+    valeur_service_point: 1.4386
+    rendement_facial: 0.07126
+    taux_appel: 1.27
+    taux_contractuel_t1: 0.0620
+    taux_contractuel_t2: 0.1700
+    coefficient_solidarite: "supprimé depuis le 1er avril 2024"
+    source_reference: "Chiffr'Agirc-Arrco 2026"
+    source_url: "https://www.agirc-arrco.fr/storage/chiffrAA_2026_VF.pdf"
+    last_verified: "2026-08-08"
+    confidence: high
+    note: >-
+      Les points sont acquis sur le taux CONTRACTUEL (6,20 % / 17,00 %), alors
+      que la cotisation est appelée à 127 %. Le différentiel de 27 % ne génère
+      aucun droit. C'est un point d'explication central du module "anatomie".
+
+  hypotheses_valorisation:
+    rule_id: RETR_004
+    title: Hypothèses de monétisation des droits retraite (paramétrables, affichées)
+    duree_service_rente_annees: 22
+    taux_actualisation_reel: 0.010
+    taux_imposition_rente_a_la_retraite: 0.20
+    revalorisation_reelle_point: 0.000
+    statut: "hypothese_utilisateur"
+    confidence: low
+    note: >-
+      GARDE-FOU. Ces coefficients ne sont PAS des données réglementaires. Ils
+      convertissent une rente viagère en capital équivalent. Ils doivent être
+      affichés à côté de tout chiffre de "valeur patrimoniale" incluant des
+      droits sociaux, et le moteur produit toujours en parallèle un indicateur
+      NON monétisé (trimestres, points, rente annuelle brute).
+
+# -----------------------------------------------------------------------------
+# 5. FISCALITÉ PERSONNELLE
+# -----------------------------------------------------------------------------
+impot_revenu:
+  bareme:
+    rule_id: TAX_IR_001
+    title: Barème progressif de l'impôt sur le revenu — imposition 2026 des revenus 2025
+    tranches:
+      - { plafond: 11600,  taux: 0.00 }
+      - { plafond: 29579,  taux: 0.11 }
+      - { plafond: 84577,  taux: 0.30 }
+      - { plafond: 181917, taux: 0.41 }
+      - { plafond: null,   taux: 0.45 }
+    indexation: "+0,9 % (LF 2026)"
+    effective_from: "2026-01-01"
+    source_type: legislation
+    source_reference: "Loi n° 2026-103 du 19 février 2026 de finances pour 2026, art. 4 ; BOFiP ACTU-2026-00022"
+    source_url: "https://bofip.impots.gouv.fr/bofip/14954-PGP.html/ACTU-2026-00022"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  decote:
+    rule_id: TAX_IR_002
+    title: "Décote"
+    montant_celibataire: 897
+    montant_couple: 1483
+    taux: 0.4525
+    seuil_impot_brut_celibataire: 1982
+    seuil_impot_brut_couple: 3277
+    formule: "decote = max(0 ; montant - taux x impot_brut), appliquée si impot_brut < seuil"
+    source_reference: "Art. 197 I 4 CGI ; economie.gouv.fr"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  quotient_familial:
+    rule_id: TAX_IR_003
+    title: "Plafonnement du quotient familial"
+    plafond_demi_part: 1807
+    plafond_part_entiere_parent_isole: 4262
+    demi_parts_couvertes_parent_isole: 2
+    plafond_demi_part_personne_seule_ayant_eleve_enfant: 1079
+    source_reference: "Art. 197 I 2 CGI ; BOI-IR-LIQ-20-20-20 (07/04/2026)"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  abattement_salaires:
+    rule_id: TAX_IR_004
+    title: "Abattement de 10 % sur les traitements et salaires"
+    taux: 0.10
+    plancher: 509
+    plafond: 14555
+    source_reference: "Art. 83 2° CGI ; impots.gouv.fr"
+    last_verified: "2026-08-08"
+    confidence: high
+    note: "Plusieurs sites tiers affichent encore 14 171 € ou 14 426 € (années antérieures)."
+
+  cehr:
+    rule_id: TAX_IR_005
+    title: Contribution exceptionnelle sur les hauts revenus
+    tranches_celibataire:
+      - { de: 250000,  a: 500000,  taux: 0.03 }
+      - { de: 500000,  a: null,    taux: 0.04 }
+    tranches_couple:
+      - { de: 500000,  a: 1000000, taux: 0.03 }
+      - { de: 1000000, a: null,    taux: 0.04 }
+    assiette: "revenu fiscal de référence"
+    source_type: legislation
+    source_reference: "Art. 223 sexies CGI (inchangé en 2026)"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  cdhr:
+    rule_id: TAX_IR_006
+    title: Contribution différentielle sur les hauts revenus
+    reconduite_2026: true
+    seuil_celibataire: 250000
+    seuil_couple: 500000
+    taux_plancher: 0.20
+    abattement_par_personne_a_charge: 1500
+    abattement_imposition_commune: 12500
+    formule: |
+      CDHR = max(0 ; 20% x RFR_ajusté
+                     - (IR + CEHR + prélèvements libératoires
+                        + 1500 x personnes_a_charge
+                        + 12500 si imposition commune))
+      décote appliquée si RFR <= 330 000 (célibataire) / 660 000 (couple) :
+        réduction = max(0 ; 20% x RFR - 82,5% x (RFR - seuil))
+    plafond_decote_celibataire: 330000
+    plafond_decote_couple: 660000
+    coefficient_lissage: 0.825
+    source_type: legislation
+    source_reference: "Art. 224 CGI modifié par LF 2026 art. 2 ; BOI-IR-CDHR-10 et -20"
+    last_verified: "2026-08-08"
+    confidence: high
+
+capital:
+  prelevements_sociaux:
+    rule_id: TAX_PS_001
+    title: Prélèvements sociaux sur les revenus du capital
+    taux_plein_2026: 0.186
+    composition_taux_plein: { csg: 0.106, crds: 0.005, prelevement_solidarite: 0.075 }
+    taux_derogatoire_2026: 0.172
+    composition_taux_derogatoire: { csg: 0.092, crds: 0.005, prelevement_solidarite: 0.075 }
+    produits_au_taux_plein:
+      - "dividendes et revenus de capitaux mobiliers"
+      - "plus-values mobilières (compte-titres)"
+      - "PEA (gain net de retrait)"
+      - "épargne salariale : PEE, participation, intéressement"
+      - "PER : gains à la sortie en capital"
+    produits_au_taux_derogatoire:
+      - "revenus fonciers (location nue)"
+      - "plus-values immobilières"
+      - "assurance-vie et bons ou contrats de capitalisation"
+      - "PEL / CEL réglementés"
+      - "plans d'épargne populaire (PEP)"
+    csg_deductible_si_option_bareme: 0.068
+    effective_from: "2026-01-01"
+    source_type: legislation
+    source_reference: "Art. L.136-8 CSS (I 2° et IV) dans sa version en vigueur en 2026 ; LFSS 2026, loi n° 2025-1403 du 30 décembre 2025"
+    source_url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000054336623"
+    last_verified: "2026-08-08"
+    confidence: high
+    note: >-
+      POINT D'ATTENTION MAJEUR 2026. La CSG sur le capital passe de 9,2 % à
+      10,6 %, portant le prélèvement global de 17,2 % à 18,6 %. La liste des
+      dérogations du IV de l'art. L.136-8 CSS est limitative : tout produit qui
+      n'y figure pas subit la hausse, y compris le PEE et le PEA.
+      La part de CSG déductible reste à 6,8 points malgré la hausse du taux
+      facial : la part non déductible passe donc de 2,4 à 3,8 points.
+
+  pfu:
+    rule_id: TAX_PFU_001
+    title: "Prélèvement forfaitaire unique et option pour le barème"
+    taux_ir: 0.128
+    taux_ps: 0.186
+    taux_global: 0.314
+    option_bareme:
+      abattement_dividendes: 0.40
+      csg_deductible: 0.068
+      caractere: "option globale et irrévocable pour l'ensemble des revenus de l'année"
+    source_reference: "Art. 200 A CGI ; art. 158 3-2° CGI ; art. 154 quinquies II CGI"
+    last_verified: "2026-08-08"
+    confidence: high
+
+impot_societes:
+  rule_id: TAX_IS_001
+  title: "Impôt sur les sociétés"
+  taux_normal: 0.25
+  taux_reduit: 0.15
+  plafond_taux_reduit: 42500
+  conditions_taux_reduit:
+    ca_ht_max: 10000000
+    capital_entierement_libere: true
+    detention_min_personnes_physiques: 0.75
+  contribution_sociale:
+    taux: 0.033
+    seuil_ca_ht: 7630000
+    seuil_is_du: 763000
+    abattement_sur_is: 763000
+    confidence: medium
+  source_type: legislation
+  source_reference: "Art. 219 I et I-b CGI dans sa version en vigueur au 21 février 2026 ; art. 235 ter ZC CGI"
+  last_verified: "2026-08-08"
+  confidence: high
+
+# -----------------------------------------------------------------------------
+# 6. PER INDIVIDUEL
+# -----------------------------------------------------------------------------
+per_individuel:
+  plafond_salarie:
+    rule_id: PER_001
+    title: Plafond de déduction — revenus salariaux et assimilés
+    taux: 0.10
+    plafond_pass: 8
+    taux_plancher: 0.10
+    formule: "max( 10% x revenus professionnels nets N-1 plafonnés à 8 PASS N-1 ; 10% x PASS N-1 )"
+    pass_reference: "N-1"
+    plafond_max_2026: 37680
+    plancher_2026: 4710
+    source_reference: "Art. 163 quatervicies CGI"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  plafond_tns:
+    rule_id: PER_002
+    title: Plafond de déduction — travailleur non salarié (dispositif dit Madelin)
+    taux_base: 0.10
+    taux_majore: 0.15
+    plafond_pass: 8
+    taux_plancher: 0.10
+    formule: "10% x bénéfice plafonné à 8 PASS N + 15% x (fraction du bénéfice comprise entre 1 et 8 PASS N)"
+    pass_reference: "N"
+    plafond_max_2026: 88911
+    plancher_2026: 4806
+    cumul_avec_plafond_salarie: "le TNS choisit le régime le plus favorable, sans cumul des deux plafonds sur un même revenu"
+    source_reference: "Art. 154 bis CGI ; art. 163 quatervicies CGI"
+    last_verified: "2026-08-08"
+    confidence: medium
+
+  report:
+    rule_id: PER_003
+    title: "Report et mutualisation des plafonds PER"
+    duree_report_avant_2026: 3
+    duree_report_a_compter_de_2026: 5
+    retroactivite: false
+    mutualisation_conjoints: "possible pour le plafond salarié uniquement (imposition commune) ; le plafond TNS reste strictement individuel"
+    source_reference: "LF 2026 ; art. 163 quatervicies CGI"
+    last_verified: "2026-08-08"
+    confidence: medium
+
+  fiscalite_sortie:
+    rule_id: PER_004
+    title: "Fiscalité de sortie du PER"
+    capital_part_versements_deduits: "barème IR catégorie pensions, sans abattement de 10 % ; pas de prélèvements sociaux"
+    capital_part_plus_values: "PFU 31,4 % (12,8 % IR + 18,6 % PS)"
+    rente_versements_deduits: "régime des pensions de retraite (barème IR après abattement 10 %, prélèvements sociaux sur pensions)"
+    rente_versements_non_deduits: "RVTO : fraction imposable selon l'âge (30/50/60/70 %), PS 18,6 % sur la fraction imposable"
+    source_reference: "Art. 158 5 b quinquies CGI ; art. 200 A CGI ; art. 158-6 CGI"
+    last_verified: "2026-08-08"
+    confidence: medium
+    note: >-
+      DIVERGENCE NON TRANCHÉE sur le taux de prélèvements sociaux applicable à
+      la rente PER issue de versements déduits (lecture littérale de L.136-8 CSS
+      vs pratique de marché appliquant le régime des pensions). Le moteur
+      n'automatise pas d'arbitrage capital/rente et signale le point.
+
+# -----------------------------------------------------------------------------
+# 7. ÉPARGNE SALARIALE
+# -----------------------------------------------------------------------------
+epargne_salariale:
+  acces_dirigeant:
+    rule_id: ES_001
+    title: Conditions d'accès du dirigeant aux dispositifs
+    effectif_min_salaries: 1
+    effectif_max_salaries: 249
+    texte: >-
+      Dispositifs ouverts aux entreprises employant au moins un salarié et moins
+      de 250 salariés. Bénéficiaires : chefs d'entreprise ; présidents,
+      directeurs généraux, gérants ou membres du directoire ; conjoint ou
+      partenaire pacsé ayant le statut de conjoint collaborateur ou associé.
+    exclusion: >-
+      Un accord ne peut être conclu si l'unique salarié de l'entreprise est
+      lui-même le président, le directeur général, le gérant ou un membre du
+      directoire. Le dirigeant ne compte pas dans l'effectif.
+    lissage_seuil: >-
+      Le gel de 5 ans en cas de franchissement de seuil (art. L.130-1 II CSS)
+      ne s'applique PAS au franchissement du seuil d'un salarié.
+    source_type: legislation
+    source_reference: "Art. L.3312-3 et L.3332-2 du code du travail"
+    source_url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038610155"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  pee:
+    rule_id: ES_002
+    title: "Plan d'épargne entreprise (PEE)"
+    taux_plafond_versement_volontaire: 0.25
+    plafond_versement_volontaire: "25 % de la rémunération annuelle brute ; pour le dirigeant, 25 % du revenu professionnel imposé à l'IR au titre de N-1"
+    reference_si_pas_de_remuneration: "25 % du PASS"
+    abondement_plafond_pct_pass: 0.08
+    abondement_plafond_eur_2026: 3844.80
+    abondement_plafond_multiple_versement: 3.0
+    abondement_majoration_actionnariat: 0.80
+    abondement_plafond_majore_eur_2026: 6920.64
+    duree_blocage_annees: 5
+    cas_deblocage_anticipe:
+      - "mariage / PACS"
+      - "naissance ou adoption du 3e enfant"
+      - "divorce, séparation, dissolution de PACS avec garde d'enfant"
+      - "violences conjugales"
+      - "acquisition ou agrandissement de la résidence principale"
+      - "invalidité du bénéficiaire, du conjoint ou d'un enfant"
+      - "décès du bénéficiaire ou du conjoint"
+      - "cessation du contrat de travail / fin du mandat"
+      - "création ou reprise d'entreprise"
+      - "surendettement"
+      - "travaux de rénovation énergétique de la résidence principale"
+      - "acquisition d'un véhicule propre (neuf)"
+      - "dépenses liées à la qualité de proche aidant"
+    source_reference: "Art. L.3332-10 et L.3332-11 code du travail ; loi n° 2023-1107 du 29 novembre 2023"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  pereco:
+    rule_id: ES_003
+    title: "Plan d'épargne retraite collectif (PERECO)"
+    abondement_plafond_pct_pass: 0.16
+    abondement_plafond_eur_2026: 7689.60
+    abondement_plafond_multiple_versement: 3.0
+    versements_volontaires_deductibles: "oui, sur le plafond commun art. 163 quatervicies / 154 bis CGI"
+    sortie: "capital et/ou rente au choix pour le compartiment volontaire et le compartiment collectif"
+    deblocage_anticipe_supplementaire: "acquisition de la résidence principale"
+    source_reference: "Art. L.3334-6 code du travail ; art. L.224-2 et L.224-4 CMF"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  interessement:
+    rule_id: ES_004
+    title: "Intéressement"
+    plafond_global: "20 % du total des salaires bruts et, le cas échéant, de la rémunération annuelle ou du revenu professionnel N-1 des bénéficiaires dirigeants"
+    taux_plafond_global: 0.20
+    plafond_individuel_pct_pass: 0.75
+    plafond_individuel_eur_2026: 36045
+    duree_accord_annees: [1, 5]
+    mise_en_place_unilaterale: "possible dans les entreprises de moins de 50 salariés en l'absence de délégué syndical et de CSE, ou après échec de la négociation"
+    caractere: "aléatoire et collectif, formule liée aux résultats ou performances"
+    exoneration_ir_si_affectation_plan: "oui, si affectation dans les 15 jours, dans la limite du plafond individuel"
+    source_type: legislation
+    source_reference: "Art. L.3312-3, L.3312-5 et L.3314-8 du code du travail"
+    source_url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038613229"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  participation:
+    rule_id: ES_005
+    title: "Participation"
+    seuil_obligatoire_salaries: 50
+    duree_franchissement_annees: 5
+    formule_legale: "RSP = 1/2 x (B - 5% x C) x S/VA"
+    plafond_individuel_eur_2026: 36045
+    acces_dirigeant: >-
+      Dans les entreprises de 1 à 249 salariés, seule la fraction de la réserve
+      dérogatoire EXCÉDANT le résultat de la formule légale peut être répartie
+      au profit des dirigeants et de leur conjoint. L'accès du dirigeant est
+      donc plus restrictif que pour le PEE et l'intéressement.
+    obligation_11_49_salaries: >-
+      Expérimentation en vigueur depuis le 1er janvier 2025 et jusqu'au
+      31 décembre 2029 : obligation de mettre en place un dispositif de partage
+      de la valeur pour les entreprises de 11 à 49 salariés dont le bénéfice net
+      fiscal atteint au moins 1 % du chiffre d'affaires pendant trois exercices
+      consécutifs.
+    source_reference: "Art. L.3322-2, L.3324-1 et L.3324-2 du code du travail ; loi n° 2023-1107"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  ppv:
+    rule_id: ES_006
+    title: Prime de partage de la valeur
+    eligibilite_dirigeant: false
+    note_eligibilite: >-
+      Réservée aux salariés. Un gérant majoritaire de SARL ou un président de
+      SASU sans contrat de travail distinct n'y a pas droit. Le moteur exclut
+      donc systématiquement la PPV des scénarios du dirigeant, et ne la retient
+      que pour les salariés de l'entreprise.
+    plafond_standard: 3000
+    plafond_majore: 6000
+    regime_2026: "exonération totale (cotisations + CSG/CRDS + IR) pour les entreprises de moins de 50 salariés et les salariés rémunérés en dessous de 3 SMIC — dernière année d'application"
+    fin_regime_exonere: "2026-12-31"
+    source_reference: "Loi n° 2022-1158 du 16 août 2022 ; loi n° 2023-1107"
+    last_verified: "2026-08-08"
+    confidence: medium
+
+  ppve:
+    rule_id: ES_007
+    title: Plan de partage de la valorisation de l'entreprise
+    eligibilite_dirigeant: false
+    plafond_individuel_eur_2026: 36045
+    contribution_patronale_specifique: 0.20
+    source_reference: "Loi n° 2023-1107 du 29 novembre 2023"
+    last_verified: "2026-08-08"
+    confidence: medium
+
+  forfait_social:
+    rule_id: ES_008
+    title: "Forfait social"
+    taux_droit_commun: 0.20
+    seuil_effectif_abondement_participation: 50
+    seuil_effectif_interessement: 250
+    exonerations:
+      abondement_et_participation_moins_de_50_salaries: 0.00
+      interessement_moins_de_250_salaries: 0.00
+      abondement_actionnariat_salarie: 0.10
+    source_reference: "Art. L.137-15 et L.137-16 CSS"
+    last_verified: "2026-08-08"
+    confidence: high
+
+  csg_crds_sur_epargne_salariale:
+    rule_id: ES_009
+    title: "CSG et CRDS sur l'épargne salariale"
+    taux: 0.097
+    assiette: "100 % du montant, sans abattement pour frais professionnels"
+    source_reference: "Art. L.136-1 et L.136-8 I 1° CSS"
+    last_verified: "2026-08-08"
+    confidence: medium
+    note: "L'absence d'abattement de 1,75 % n'est explicitée que par une source. À confirmer."
+
+  prelevements_sociaux_sortie:
+    rule_id: ES_010
+    title: "Prélèvements sociaux à la sortie des plans"
+    applique_aux_plus_values_uniquement: true
+    taux_2026: 0.186
+    source_reference: "Art. L.136-7 II 6° et 7° CSS renvoyant au taux plein de l'art. L.136-8 I 2°"
+    last_verified: "2026-08-08"
+    confidence: high
+
+# -----------------------------------------------------------------------------
+# 10. POLITIQUE DU CABINET
+# -----------------------------------------------------------------------------
+# Seuils qui ne sont PAS réglementaires : ce sont des conventions de restitution
+# et de prudence propres au cabinet. Ils vivent ici pour rester auditables et
+# modifiables sans toucher au code, au même titre que les constantes de droit.
+politique_cabinet:
+  rule_id: POL_001
+  title: "Conventions de restitution et seuils de prudence du cabinet"
+  materialite:
+    ecart_valeur_significatif_eur: 250000
+    ecart_valeur_majeur_eur: 300000
+    plafond_per_inutilise_signalable_eur: 1000
+  robustesse:
+    penalite_conditionnel: 0.02
+    penalite_incertain: 0.06
+    penalite_bloquant: 0.15
+  source_type: "convention_interne"
+  source_reference: "Décision cabinet VALAR — non réglementaire"
+  last_verified: "2026-08-08"
+  confidence: high
+  note: >-
+    Aucune de ces valeurs n'a de fondement légal. Elles pilotent uniquement le
+    seuil à partir duquel le moteur qualifie un écart de significatif et la
+    dégradation de la note de robustesse. Les faire vivre dans le référentiel
+    évite qu'elles soient prises pour des règles de droit.

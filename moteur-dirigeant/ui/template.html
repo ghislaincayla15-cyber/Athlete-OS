@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moteur d'optimisation patrimoniale du dirigeant — VALAR</title>
+<!-- Aucune ressource externe. L'appel à Google Fonts a été retiré : il envoyait
+     l'adresse IP de l'utilisateur à un tiers à chaque ouverture, y compris en
+     contexte de dossier client, ce qui contredisait la promesse « aucune donnée
+     ne quitte votre navigateur ». Le fichier est désormais réellement autonome
+     et fonctionne à l'identique hors connexion. -->
+<style>
+:root{
+  --v-nuit: oklch(0.212 0.029 260);
+  --v-nuit-2: oklch(0.272 0.039 261);
+  --v-nuit-3: oklch(0.318 0.044 258);
+  --v-menthe: oklch(0.819 0.077 165);
+  --v-menthe-vif: oklch(0.763 0.105 162);
+  --v-menthe-soft: oklch(0.910 0.039 166);
+  --v-blanc: oklch(1 0 0);
+  --v-gris-bleu: oklch(0.711 0.037 244);
+  --v-positif: oklch(0.72 0.11 160);
+  --v-alerte: oklch(0.75 0.12 75);
+  --v-risque: oklch(0.60 0.15 25);
+  --bg: var(--v-nuit-2); --bg-elev: var(--v-nuit-3); --bg-deep: var(--v-nuit);
+  --texte: var(--v-blanc); --texte-2: var(--v-gris-bleu); --texte-3: oklch(0.60 0.03 250);
+  --accent: var(--v-menthe); --bordure: oklch(0.38 0.03 258);
+  --e1:.25rem;--e2:.5rem;--e3:.75rem;--e4:1rem;--e5:1.25rem;--e6:1.5rem;--e8:2rem;--e10:2.5rem;--e12:3rem;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:12px;--r-xl:16px;--r-pill:999px;
+  --t-xs:.75rem;--t-sm:.875rem;--t-base:1rem;--t-lg:1.125rem;--t-xl:1.5rem;--t-2xl:1.875rem;--t-3xl:2.5rem;
+  --font:'Manrope','Inter','Segoe UI Variable Text',system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --ombre-md:0 4px 16px oklch(0.15 0.02 260/.18);
+  --ease:cubic-bezier(0.16,1,0.3,1);--d-fast:150ms;--d-base:250ms;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--texte);font-size:var(--t-sm);line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+h1,h2,h3{letter-spacing:-.02em;font-weight:700}
+a{color:var(--accent)}
+.surtitre{font-size:var(--t-xs);letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:var(--accent)}
+.entete{position:sticky;top:0;z-index:50;background:var(--bg-deep);border-bottom:1px solid var(--bordure);
+  padding:var(--e4) var(--e6);display:flex;align-items:center;gap:var(--e6);flex-wrap:wrap}
+.entete h1{font-size:var(--t-lg)}
+.badge{display:inline-flex;align-items:center;gap:var(--e1);padding:.15rem .6rem;border-radius:var(--r-pill);
+  font-size:var(--t-xs);font-weight:600;border:1px solid var(--bordure);color:var(--texte-2)}
+.badge.ok{border-color:var(--v-positif);color:var(--v-positif)}
+.badge.warn{border-color:var(--v-alerte);color:var(--v-alerte)}
+.badge.risk{border-color:var(--v-risque);color:var(--v-risque)}
+.badge.accent{border-color:var(--accent);color:var(--accent)}
+.grille{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:var(--e6);padding:var(--e6);
+  align-items:start;max-width:1700px;margin:0 auto}
+@media(max-width:1100px){.grille{grid-template-columns:1fr}}
+.carte{background:var(--bg-elev);border:1px solid var(--bordure);border-radius:var(--r-lg);padding:var(--e5)}
+.panneau{position:sticky;top:76px;max-height:calc(100vh - 96px);overflow-y:auto}
+fieldset{border:0;margin-bottom:var(--e5)}
+legend{font-size:var(--t-xs);letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--accent);
+  margin-bottom:var(--e3);padding-bottom:var(--e2);border-bottom:1px solid var(--bordure);width:100%}
+.champ{display:grid;grid-template-columns:1fr 108px;gap:var(--e2);align-items:center;margin-bottom:var(--e2)}
+.champ label{font-size:var(--t-xs);color:var(--texte-2)}
+.aide{font-size:.7rem;line-height:1.4;color:var(--texte-3);margin:-2px 0 8px;display:block}
+input,select{background:var(--bg-deep);border:1px solid var(--bordure);color:var(--texte);
+  border-radius:var(--r-xs);padding:.35rem .5rem;font-family:var(--font);font-size:var(--t-xs);width:100%;
+  font-variant-numeric:tabular-nums}
+input:focus,select:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+input[type=checkbox]{width:auto;justify-self:end}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--e2);padding:.65rem 1.2rem;
+  border-radius:var(--r-sm);font-weight:600;font-size:var(--t-sm);border:1px solid transparent;cursor:pointer;
+  font-family:var(--font);transition:background var(--d-fast) var(--ease),border-color var(--d-fast) var(--ease)}
+.btn-plein{background:var(--v-menthe);color:var(--v-nuit)}
+.btn-plein:hover{background:var(--v-menthe-soft)}
+.btn-contour{border-color:var(--bordure);color:var(--texte)}
+.btn-contour:hover{border-color:var(--accent);color:var(--accent)}
+.onglets{display:flex;gap:var(--e2);margin-bottom:var(--e5);flex-wrap:wrap}
+.onglet{padding:.5rem 1rem;border-radius:var(--r-pill);border:1px solid var(--bordure);cursor:pointer;
+  font-size:var(--t-xs);font-weight:600;color:var(--texte-2);background:transparent;font-family:var(--font)}
+.onglet.actif{background:var(--v-menthe);color:var(--v-nuit);border-color:var(--v-menthe)}
+.kpi{font-size:var(--t-2xl);font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kpi.neg{color:var(--v-risque)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--e4);margin:var(--e5) 0}
+.kpi-bloc{background:var(--bg-deep);border:1px solid var(--bordure);border-radius:var(--r-md);padding:var(--e4)}
+.kpi-bloc .lib{font-size:var(--t-xs);color:var(--texte-2);margin-bottom:var(--e1)}
+table{width:100%;border-collapse:collapse;font-size:var(--t-xs);font-variant-numeric:tabular-nums}
+th,td{padding:.4rem .5rem;text-align:right;border-bottom:1px solid var(--bordure)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--texte-2);font-weight:600;font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;
+  position:sticky;top:0;background:var(--bg-elev)}
+tbody tr:hover{background:oklch(1 0 0/.03)}
+td.pos{color:var(--v-positif)}td.neg{color:var(--v-risque)}
+.tableau-scroll{max-height:520px;overflow:auto;border:1px solid var(--bordure);border-radius:var(--r-md)}
+.alerte{border-left:3px solid var(--bordure);padding:var(--e3) var(--e4);margin-bottom:var(--e3);
+  background:var(--bg-deep);border-radius:0 var(--r-sm) var(--r-sm) 0}
+.alerte.opportunite{border-left-color:var(--v-positif)}
+.alerte.vigilance{border-left-color:var(--v-alerte)}
+.alerte.alerte-forte,.alerte.bloquant{border-left-color:var(--v-risque)}
+.alerte h4{font-size:var(--t-sm);margin-bottom:var(--e1)}
+.alerte p{color:var(--texte-2);font-size:var(--t-xs)}
+.alerte .src{color:var(--texte-3);font-size:.7rem;margin-top:var(--e2);font-style:italic}
+.bloc{margin-bottom:var(--e8)}
+.bloc h3{font-size:var(--t-base);margin-bottom:var(--e3);display:flex;align-items:center;gap:var(--e3)}
+.note{color:var(--texte-3);font-size:.7rem;margin-top:var(--e2)}
+.cascade{display:flex;flex-direction:column;gap:2px;margin-top:var(--e3)}
+.cascade .seg{display:flex;align-items:center;gap:var(--e3);font-size:var(--t-xs)}
+.cascade .barre{height:16px;border-radius:3px}
+.masque{display:none}
+pre{background:var(--bg-deep);border:1px solid var(--bordure);border-radius:var(--r-md);padding:var(--e4);
+  overflow:auto;max-height:420px;font-size:.7rem;color:var(--texte-2);white-space:pre-wrap;word-break:break-word}
+.pied{padding:var(--e6);color:var(--texte-3);font-size:var(--t-xs);border-top:1px solid var(--bordure);
+  max-width:1700px;margin:0 auto}
+.rangee-actions{display:flex;gap:var(--e3);flex-wrap:wrap;margin-top:var(--e4)}
+ul.actions{list-style:none;margin-top:var(--e3)}
+ul.actions li{padding:.4rem 0 .4rem 1.4rem;position:relative;border-bottom:1px solid var(--bordure)}
+ul.actions li::before{content:'→';position:absolute;left:0;color:var(--accent)}
+.legende{display:flex;gap:var(--e4);flex-wrap:wrap;font-size:.7rem;color:var(--texte-3);margin-top:var(--e2)}
+.legende span::before{content:'';display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px}
+</style>
+</head>
+<body>
+
+<header class="entete">
+  <div>
+    <div class="surtitre">VALAR Gestion Privée — outil interne</div>
+    <h1>Moteur d'optimisation patrimoniale du dirigeant</h1>
+  </div>
+  <span class="badge accent" id="badge-millesime">millésime —</span>
+  <span class="badge" id="badge-version">v—</span>
+  <div style="margin-left:auto;display:flex;gap:.5rem;align-items:center">
+    <select id="preset" style="width:auto"><option value="">— charger un cas type —</option></select>
+    <button class="btn btn-plein" id="btn-simuler">Simuler</button>
+  </div>
+</header>
+
+<div class="grille">
+
+  <!-- ================= PANNEAU DE SAISIE ================= -->
+  <form class="carte panneau" id="form">
+    <fieldset>
+      <legend>Entreprise</legend>
+      <div class="champ"><label for="f-e-forme">Forme juridique</label><select id="f-e-forme" name="e.forme"><option>SARL</option><option>EURL</option><option>SAS</option><option>SASU</option></select></div>
+      <div class="champ"><label for="f-e-activite">Activité</label><select id="f-e-activite" name="e.activite"><option value="commerciale">Commerciale</option><option value="artisanale">Artisanale</option><option value="liberale">Libérale</option></select></div>
+      <div class="champ"><label for="f-e-ca-ht">Chiffre d'affaires HT</label><input id="f-e-ca-ht" type="number" name="e.ca_ht" min="0" value="600000"></div>
+      <div class="champ"><label for="f-e-resultat-avant-remuneration">Résultat avant rémunération du dirigeant</label><input id="f-e-resultat-avant-remuneration" type="number" name="e.resultat_avant_remuneration" value="180000"></div>
+      <div class="aide">Enveloppe économique répartie par le moteur : résultat avant rémunération du dirigeant et avant IS.</div>
+      <div class="champ"><label for="f-e-tresorerie">Trésorerie</label><input id="f-e-tresorerie" type="number" name="e.tresorerie" min="0" value="120000"></div>
+      <div class="champ"><label for="f-e-reserves-distribuables">Réserves distribuables</label><input id="f-e-reserves-distribuables" type="number" name="e.reserves_distribuables" min="0" value="0"></div>
+      <div class="champ"><label for="f-e-capital-social">Capital social libéré</label><input id="f-e-capital-social" type="number" name="e.capital_social" min="0" value="10000"></div>
+      <div class="champ"><label for="f-e-primes-emission">Primes d'émission</label><input id="f-e-primes-emission" type="number" name="e.primes_emission" min="0" value="0"></div>
+      <div class="champ"><label for="f-e-compte-courant-associe-moyen">Compte courant — solde moyen annuel</label><input id="f-e-compte-courant-associe-moyen" type="number" name="e.compte_courant_associe_moyen" min="0" value="20000"></div>
+      <div class="aide">Solde MOYEN de l'exercice précédent, pas le solde ponctuel (art. R.131-7 CSS).</div>
+      <div class="champ"><label for="f-e-nb-salaries">Nombre de salariés (hors dirigeant)</label><input id="f-e-nb-salaries" type="number" name="e.nb_salaries" min="0" step="1" value="2"></div>
+      <div class="champ"><label for="f-e-masse-salariale">Masse salariale brute</label><input id="f-e-masse-salariale" type="number" name="e.masse_salariale" min="0" value="70000"></div>
+      <div class="champ"><label for="f-e-conjoint-salarie">Conjoint salarié</label><input id="f-e-conjoint-salarie" type="checkbox" name="e.conjoint_salarie"></div>
+      <div class="champ"><label for="f-e-conjoint-salarie-anciennete-mois">Ancienneté du conjoint salarié (mois)</label><input id="f-e-conjoint-salarie-anciennete-mois" type="number" name="e.conjoint_salarie_anciennete_mois" min="0" max="600" step="1" value="0"></div>
+      <div class="champ"><label for="f-e-pee-existant">PEE existant</label><input id="f-e-pee-existant" type="checkbox" name="e.pee_existant" checked></div>
+      <div class="champ"><label for="f-e-pereco-existant">PERECO existant</label><input id="f-e-pereco-existant" type="checkbox" name="e.pereco_existant" checked></div>
+      <div class="champ"><label for="f-e-accord-interessement">Accord d'intéressement en vigueur</label><input id="f-e-accord-interessement" type="checkbox" name="e.accord_interessement"></div>
+      <div class="champ"><label for="f-e-anciennete-annees">Ancienneté de la société (années)</label><input id="f-e-anciennete-annees" type="number" name="e.anciennete_annees" min="0" max="150" step="1" value="3"></div>
+      <div class="champ"><label for="f-e-capital-libere">Capital entièrement libéré</label><input id="f-e-capital-libere" type="checkbox" name="e.capital_libere" checked></div>
+      <div class="champ"><label for="f-e-detention-personnes-physiques-pct">Détention par personnes physiques (%)</label><input id="f-e-detention-personnes-physiques-pct" type="number" name="e.detention_personnes_physiques_pct" min="0" max="100" value="100"></div>
+      <div class="aide">Capital libéré et détention à 75 % au moins par des personnes physiques conditionnent le taux d'IS réduit à 15 % (art. 219 I b CGI).</div>
+      <div class="champ"><label for="f-e-reglement-abondement-pee-pct">Abondement du règlement PEE (× versement)</label><input id="f-e-reglement-abondement-pee-pct" type="number" name="e.reglement_abondement_pee_pct" min="0" max="3" step="0.5" value="3"></div>
+      <div class="champ"><label for="f-e-reglement-abondement-pereco-pct">Abondement du règlement PERECO (× versement)</label><input id="f-e-reglement-abondement-pereco-pct" type="number" name="e.reglement_abondement_pereco_pct" min="0" max="3" step="0.5" value="3"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Dirigeant</legend>
+      <div class="champ"><label for="f-d-fonction">Fonction</label><select id="f-d-fonction" name="d.fonction"><option value="gerant_majoritaire">Gérant majoritaire</option><option value="gerant_minoritaire">Gérant minoritaire</option><option value="president_sas">Président de SAS</option></select></div>
+      <div class="champ"><label for="f-d-detention-pct">Détention (%)</label><input id="f-d-detention-pct" type="number" name="d.detention_pct" min="0" max="100" value="100"></div>
+      <div class="champ"><label for="f-d-age">Âge</label><input id="f-d-age" type="number" name="d.age" min="16" max="90" step="1" value="45"></div>
+      <div class="champ"><label for="f-d-remuneration-actuelle">Coût actuel de la rémunération</label><input id="f-d-remuneration-actuelle" type="number" name="d.remuneration_actuelle" min="0" value="90000"></div>
+      <div class="champ"><label for="f-d-dividendes-actuels">Dividendes actuels</label><input id="f-d-dividendes-actuels" type="number" name="d.dividendes_actuels" min="0" value="30000"></div>
+      <div class="champ"><label for="f-d-taux-atmp-pct">Taux AT/MP (%) — assimilé salarié</label><input id="f-d-taux-atmp-pct" type="number" step="0.01" name="d.taux_atmp_pct" min="0" max="20" value="1.20"></div>
+      <div class="champ"><label for="f-d-affiliation-cadre">Affiliation cadre (APEC)</label><input id="f-d-affiliation-cadre" type="checkbox" name="d.affiliation_cadre" checked></div>
+      <div class="champ"><label for="f-d-revenu-professionnel-n1">Revenu professionnel N-1 imposable</label><input id="f-d-revenu-professionnel-n1" type="number" name="d.revenu_professionnel_n1" min="0" value=""></div>
+      <div class="aide">Montant de l'avis d'imposition N-1. Il commande les plafonds assis sur N-1 (PER de droit commun, versement volontaire, intéressement). Laissé vide, le moteur le reconstitue à partir de la rémunération actuelle — c'est un proxy, pas la valeur réelle.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Foyer fiscal</legend>
+      <div class="champ"><label for="f-f-situation">Situation</label><select id="f-f-situation" name="f.situation"><option value="couple">Couple</option><option value="celibataire">Célibataire</option></select></div>
+      <div class="champ"><label for="f-f-nb-enfants">Enfants à charge</label><input id="f-f-nb-enfants" type="number" name="f.nb_enfants" min="0" max="12" step="1" value="2"></div>
+      <div class="champ"><label for="f-f-parent-isole">Parent isolé</label><input id="f-f-parent-isole" type="checkbox" name="f.parent_isole"></div>
+      <div class="champ"><label for="f-f-autres-revenus-salaires">Salaires du conjoint (nets imposables)</label><input id="f-f-autres-revenus-salaires" type="number" name="f.autres_revenus_salaires" min="0" value="0"></div>
+      <div class="champ"><label for="f-f-autres-revenus-imposables">Autres revenus imposables</label><input id="f-f-autres-revenus-imposables" type="number" name="f.autres_revenus_imposables" min="0" value="0"></div>
+      <div class="champ"><label for="f-f-revenus-capital-hors-scenario">Revenus du capital hors simulation</label><input id="f-f-revenus-capital-hors-scenario" type="number" name="f.revenus_capital_hors_scenario" min="0" value="0"></div>
+      <div class="champ"><label for="f-f-plafond-per-reporte">Plafond PER reporté</label><input id="f-f-plafond-per-reporte" type="number" name="f.plafond_per_reporte" min="0" value="0"></div>
+      <div class="champ"><label for="f-f-per-deja-verse">PER déjà versé cette année</label><input id="f-f-per-deja-verse" type="number" name="f.per_deja_verse" min="0" value="0"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Objectif</legend>
+      <div class="champ"><label for="f-o-objectif-principal">Objectif principal</label><select id="f-o-objectif-principal" name="o.objectif_principal">
+          <option value="compromis">Compromis multicritère</option>
+          <option value="net_immediat">Revenu disponible immédiat</option>
+          <option value="patrimoine_net">Patrimoine net global</option>
+          <option value="retraite">Retraite</option>
+          <option value="impot_immediat">Impôt immédiat minimal</option>
+          <option value="liquidite">Liquidité</option>
+        </select></div>
+      <div class="aide">Pondérations du compromis (0 à 3) :</div>
+      <div class="champ"><label for="f-o-liquidite">Liquidité</label><input id="f-o-liquidite" type="number" step="0.1" name="o.liquidite" min="0" max="5" value="1"></div>
+      <div class="champ"><label for="f-o-retraite">Retraite</label><input id="f-o-retraite" type="number" step="0.1" name="o.retraite" min="0" max="5" value="1"></div>
+      <div class="champ"><label for="f-o-protection">Protection sociale</label><input id="f-o-protection" type="number" step="0.1" name="o.protection" min="0" max="5" value="0.5"></div>
+      <div class="champ"><label for="f-o-fiscalite">Fiscalité</label><input id="f-o-fiscalite" type="number" step="0.1" name="o.fiscalite" min="0" max="5" value="1"></div>
+      <div class="champ"><label for="f-o-capitalisation">Capitalisation</label><input id="f-o-capitalisation" type="number" step="0.1" name="o.capitalisation" min="0" max="5" value="1"></div>
+      <div class="champ"><label for="f-o-simplicite">Simplicité</label><input id="f-o-simplicite" type="number" step="0.1" name="o.simplicite" min="0" max="5" value="0.5"></div>
+      <div class="champ"><label for="f-o-robustesse">Robustesse</label><input id="f-o-robustesse" type="number" step="0.1" name="o.robustesse" min="0" max="5" value="1"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Hypothèses</legend>
+      <div class="champ"><label for="f-h-rendement-pct">Rendement de l'épargne (%)</label><input id="f-h-rendement-pct" type="number" step="0.1" name="h.rendement_pct" min="-5" max="20" value="4"></div>
+      <div class="champ"><label for="f-h-horizon-annees">Horizon (années)</label><input id="f-h-horizon-annees" type="number" name="h.horizon_annees" min="1" max="40" step="1" value="10"></div>
+      <div class="champ"><label for="f-h-fiscalite-future-pct">Fiscalité de sortie épargne retraite (%)</label><input id="f-h-fiscalite-future-pct" type="number" step="1" name="h.fiscalite_future_pct" min="0" max="60" value="20"></div>
+      <div class="champ"><label for="f-h-coef-treso-pct">Valeur d'1 € conservé en société (%)</label><input id="f-h-coef-treso-pct" type="number" step="1" name="h.coef_treso_pct" min="0" max="100" value="75"></div>
+      <div class="champ"><label for="f-h-adhesion-pct">Taux d'adhésion des salariés (%)</label><input id="f-h-adhesion-pct" type="number" step="5" name="h.adhesion_pct" min="0" max="100" value="30"></div>
+      <div class="champ"><label for="f-h-illiquidite-pct">Coût d'illiquidité annuel (%)</label><input id="f-h-illiquidite-pct" type="number" step="0.1" name="h.illiquidite_pct" min="0" max="5" value="0.5"></div>
+      <div class="champ"><label for="f-h-pas">Pas d'optimisation (€)</label><input id="f-h-pas" type="number" step="500" name="h.pas" min="100" value="2000"></div>
+    </fieldset>
+  </form>
+
+  <!-- ================= RÉSULTATS ================= -->
+  <main>
+    <div class="onglets" role="tablist" aria-label="Niveaux de lecture">
+      <button type="button" class="onglet actif" role="tab" id="tab-client" aria-controls="vue-client" aria-selected="true" data-vue="client">Niveau 1 — Client</button>
+      <button type="button" class="onglet" role="tab" id="tab-conseiller" aria-controls="vue-conseiller" aria-selected="false" data-vue="conseiller">Niveau 2 — Conseiller</button>
+      <button type="button" class="onglet" role="tab" id="tab-expert" aria-controls="vue-expert" aria-selected="false" data-vue="expert">Niveau 3 — Expert / audit</button>
+    </div>
+
+    <section id="vue-client" role="tabpanel" aria-labelledby="tab-client" aria-live="polite"></section>
+    <section id="vue-conseiller" role="tabpanel" aria-labelledby="tab-conseiller" class="masque"></section>
+    <section id="vue-expert" role="tabpanel" aria-labelledby="tab-expert" class="masque"></section>
+  </main>
+</div>
+
+<footer class="pied">
+  Outil d'aide à la décision à usage professionnel. Les montants sont annuels. Les paramètres réglementaires
+  sont datés et sourcés dans le niveau expert ; ceux dont le niveau de confiance n'est pas « élevé » doivent
+  être confirmés sur source primaire avant toute remise de recommandation chiffrée à un client.
+  Aucune donnée saisie ici ne quitte le navigateur.
+</footer>
+
+<script>/*__PARAMS__*/</script>
+<script>/*__CASES__*/</script>
+<script>/*__MOTEUR__*/</script>
+<script>
+(function(){
+'use strict';
+const M = window.MoteurDirigeant;
+M.setReferentiel(window.__PARAMS__);
+
+const eur = n => (n===null||n===undefined||isNaN(n)) ? '—' : Math.round(n).toLocaleString('fr-FR')+' €';
+const pct = n => (n*100).toFixed(2).replace('.',',')+' %';
+const el = (t,c,h)=>{const x=document.createElement(t); if(c)x.className=c; if(h!==undefined)x.innerHTML=h; return x;};
+const esc = s => String(s===undefined||s===null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+document.getElementById('badge-millesime').textContent = 'millésime ' + M.get('meta.millesime');
+document.getElementById('badge-version').textContent = 'référentiel v' + M.get('meta.version_referentiel')
+  + ' — vérifié le ' + M.get('meta.last_verified');
+
+// ---------- presets ----------
+const selPreset = document.getElementById('preset');
+Object.keys(window.__CASES__||{}).sort().forEach(k=>{
+  const o=document.createElement('option'); o.value=k; o.textContent=k.replace(/_/g,' '); selPreset.appendChild(o);
+});
+selPreset.addEventListener('change', ()=>{
+  const c = window.__CASES__[selPreset.value]; if(!c) return;
+  const f = document.forms['form'] || document.getElementById('form');
+  const set=(n,v)=>{const i=f.elements[n]; if(!i)return; if(i.type==='checkbox') i.checked=!!v; else i.value=v;};
+  Object.keys(c.entreprise).forEach(k=>set('e.'+k, c.entreprise[k]));
+  // champs exprimés en pourcentage dans le formulaire, en fraction dans le cas
+  set('e.detention_personnes_physiques_pct', (c.entreprise.detention_personnes_physiques ?? 1) * 100);
+  set('d.fonction', c.dirigeant.fonction); set('d.detention_pct', c.dirigeant.detention*100);
+  set('d.age', c.dirigeant.age); set('d.remuneration_actuelle', c.dirigeant.remuneration_actuelle);
+  set('d.dividendes_actuels', c.dirigeant.dividendes_actuels);
+  set('d.affiliation_cadre', c.dirigeant.affiliation_cadre !== false);
+  set('d.taux_atmp_pct', ((c.dirigeant.taux_atmp ?? 0.012) * 100).toFixed(2));
+  set('d.revenu_professionnel_n1', c.dirigeant.revenu_professionnel_n1 ?? '');
+  Object.keys(c.foyer).forEach(k=>set('f.'+k, c.foyer[k]));
+  simuler();
+});
+
+// ---------- lecture du formulaire ----------
+function lire(){
+  const f = document.getElementById('form');
+  const v = n => { const i=f.elements[n]; if(!i) return null;
+    if(i.type==='checkbox') return i.checked;
+    if(i.type==='number'){ const x = parseFloat(i.value); return isFinite(x) ? x : 0; }
+    return i.value; };
+  // Variante pour les champs FACULTATIFS : un champ laissé vide doit rester
+  // indéfini et non basculer silencieusement à 0, qui est une valeur signifiante.
+  const vBrut = n => { const i=f.elements[n]; if(!i || i.value.trim()==='') return null;
+    const x = parseFloat(i.value); return isFinite(x) ? x : null; };
+  return {
+    millesime: M.get('meta.millesime'),
+    entreprise:{
+      forme:v('e.forme'), regime_fiscal:'IS', activite:v('e.activite'), ca_ht:v('e.ca_ht'),
+      resultat_avant_remuneration:v('e.resultat_avant_remuneration'), tresorerie:v('e.tresorerie'),
+      capitaux_propres:0, capital_social:v('e.capital_social'), primes_emission:v('e.primes_emission'),
+      compte_courant_associe_moyen:v('e.compte_courant_associe_moyen'),
+      reserves_distribuables:v('e.reserves_distribuables'), nb_salaries:v('e.nb_salaries'),
+      masse_salariale:v('e.masse_salariale'), anciennete_annees:v('e.anciennete_annees'),
+      conjoint_salarie:v('e.conjoint_salarie'),
+      conjoint_salarie_anciennete_mois:v('e.conjoint_salarie_anciennete_mois'),
+      capital_libere:v('e.capital_libere'),
+      detention_personnes_physiques:v('e.detention_personnes_physiques_pct')/100,
+      accord_interessement:v('e.accord_interessement'), pee_existant:v('e.pee_existant'),
+      pereco_existant:v('e.pereco_existant'),
+      reglement_abondement_pee_pct:v('e.reglement_abondement_pee_pct'),
+      reglement_abondement_pereco_pct:v('e.reglement_abondement_pereco_pct')
+    },
+    dirigeant:{
+      fonction:v('d.fonction'), detention:v('d.detention_pct')/100, age:v('d.age'),
+      remuneration_actuelle:v('d.remuneration_actuelle'), dividendes_actuels:v('d.dividendes_actuels'),
+      profession_reglementee:false, affiliation_cadre:v('d.affiliation_cadre'),
+      taux_atmp:v('d.taux_atmp_pct')/100,
+      // champ facultatif : vide => null, pour que le moteur reconstitue le proxy
+      revenu_professionnel_n1:vBrut('d.revenu_professionnel_n1')
+    },
+    foyer:{
+      situation:v('f.situation'), nb_enfants:v('f.nb_enfants'), parent_isole:v('f.parent_isole'),
+      autres_revenus_salaires:v('f.autres_revenus_salaires'),
+      autres_revenus_imposables:v('f.autres_revenus_imposables'),
+      revenus_capital_hors_scenario:v('f.revenus_capital_hors_scenario'),
+      plafond_per_reporte:v('f.plafond_per_reporte'), per_deja_verse:v('f.per_deja_verse')
+    },
+    objectifs:{
+      liquidite:v('o.liquidite'), retraite:v('o.retraite'), protection:v('o.protection'),
+      fiscalite:v('o.fiscalite'), capitalisation:v('o.capitalisation'), simplicite:v('o.simplicite'),
+      robustesse:v('o.robustesse'), objectif_principal:v('o.objectif_principal')
+    },
+    hypotheses:{
+      rendement_epargne:v('h.rendement_pct')/100, inflation:0.02, croissance_pass:0.02,
+      horizon_annees:v('h.horizon_annees'), taux_adhesion_salaries:v('h.adhesion_pct')/100,
+      cout_illiquidite_annuel:v('h.illiquidite_pct')/100,
+      fiscalite_future_epargne_retraite:v('h.fiscalite_future_pct')/100,
+      coef_valeur_tresorerie_societe:v('h.coef_treso_pct')/100, pas_optimisation:v('h.pas')||2000
+    }
+  };
+}
+
+// ---------- onglets ----------
+document.querySelectorAll('.onglet').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.onglet').forEach(x=>{
+    x.classList.remove('actif');
+    x.setAttribute('aria-selected','false');
+  });
+  b.classList.add('actif');
+  b.setAttribute('aria-selected','true');
+  ['client','conseiller','expert'].forEach(v=>{
+    document.getElementById('vue-'+v).classList.toggle('masque', v!==b.dataset.vue);
+  });
+}));
+
+// ---------- rendu ----------
+const COULEUR_ROB = {A:'ok',B:'ok',C:'warn',D:'warn',E:'risk'};
+const LIB_ROB = {A:'A — robuste',B:'B — robuste sous conditions',C:'C — validation recommandée',
+  D:'D — interprétation sensible',E:'E — ne pas automatiser'};
+
+function rendreClient(n1, opt, actuel){
+  const c = document.getElementById('vue-client'); c.innerHTML='';
+  const carte = el('div','carte');
+  carte.appendChild(el('div','surtitre','Recommandation'));
+  carte.appendChild(el('h2','',esc(n1.objectif)));
+  carte.appendChild(el('p','',esc(n1.phrase)));
+  const kpis = el('div','kpis');
+  [['Revenu disponible', opt.net_immediat, n1.gain_net_immediat],
+   ['Épargne constituée', opt.epargne_bloquee+opt.epargne_retraite, null],
+   ['Droits retraite acquis (rente/an)', opt.droits.rente_base_annuelle+opt.droits.rente_complementaire_annuelle, null],
+   ['Valeur globale', opt.valeur_globale, n1.gain_valeur_patrimoniale]].forEach(([lib,val,delta])=>{
+    const b = el('div','kpi-bloc');
+    b.appendChild(el('div','lib',esc(lib)));
+    b.appendChild(el('div','kpi'+(val<0?' neg':''),eur(val)));
+    if(delta!==null) b.appendChild(el('div','note',(delta>=0?'+ ':'− ')+eur(Math.abs(delta))+' vs situation actuelle'));
+    kpis.appendChild(b);
+  });
+  carte.appendChild(kpis);
+  carte.appendChild(el('div','',
+    '<span class="badge '+COULEUR_ROB[n1.robustesse]+'">Robustesse '+LIB_ROB[n1.robustesse]+'</span> '+
+    '<span class="badge '+(opt.conformite==='conforme'?'ok':(opt.conformite==='impossible'?'risk':'warn'))+'">'+esc(opt.conformite.replace(/_/g,' '))+'</span>'));
+  carte.appendChild(el('h3','','Ce qu\'il faut faire'));
+  const ul = el('ul','actions');
+  n1.actions.forEach(a=>ul.appendChild(el('li','',esc(a))));
+  carte.appendChild(ul);
+  carte.appendChild(el('p','note','Montants annuels. La valeur globale intègre le revenu disponible, l\'épargne constituée, la valeur estimée des droits sociaux acquis et la trésorerie conservée dans la société, nette des hypothèses affichées au niveau conseiller. Une économie d\'impôt obtenue par un versement retraite est un report d\'imposition, pas un gain définitif.'));
+  c.appendChild(carte);
+}
+
+function tableau(entetes, lignes, classesParColonne){
+  const wrap = el('div','tableau-scroll');
+  const t = el('table');
+  const thead = el('thead'); const tr = el('tr');
+  entetes.forEach(h=>tr.appendChild(el('th','',esc(h)))); thead.appendChild(tr); t.appendChild(thead);
+  const tb = el('tbody');
+  lignes.forEach(l=>{
+    const r = el('tr');
+    l.forEach((v,i)=>{ const td = el('td',(classesParColonne&&classesParColonne[i])||'',v); r.appendChild(td); });
+    tb.appendChild(r);
+  });
+  t.appendChild(tb); wrap.appendChild(t); return wrap;
+}
+
+function rendreConseiller(scenarios, opt, actuel, alertes, chrono, sortie, ctx){
+  const c = document.getElementById('vue-conseiller'); c.innerHTML='';
+
+  // -- comparaison des scénarios
+  let b = el('div','bloc carte');
+  b.appendChild(el('h3','','Comparaison des scénarios'));
+  const noms = Object.keys(scenarios);
+  const rows = [
+    ['Coût entreprise', r=>eur(r.cout_entreprise)],
+    ['Impôt sur les sociétés', r=>eur(r.impot_societes)],
+    ['Cotisations professionnelles', r=>eur(r.cotisations_totales)],
+    ['Prélèvements sociaux du capital', r=>eur(r.prelevements_sociaux_capital)],
+    ['Impôt sur le revenu', r=>eur(r.impot_revenu)],
+    ['CEHR', r=>eur(r.cehr)],
+    ['CDHR', r=>eur(r.cdhr)],
+    ['Net immédiatement disponible', r=>eur(r.net_immediat)],
+    ['Épargne bloquée (PEE)', r=>eur(r.epargne_bloquee)],
+    ['Épargne retraite (PERECO + PER)', r=>eur(r.epargne_retraite)],
+    ['Trimestres validés', r=>r.droits.trimestres],
+    ['Rente annuelle acquise', r=>eur(r.droits.rente_base_annuelle+r.droits.rente_complementaire_annuelle)],
+    ['Valeur estimée des droits sociaux', r=>eur(r.droits.valeur_actuelle_droits)],
+    ['Trésorerie société résiduelle', r=>eur(r.tresorerie_residuelle)],
+    ['Coût collectif salariés', r=>eur(r.cout_collectif_salaries||0)],
+    ['Valeur patrimoniale projetée', r=>eur(r.valeur_globale)],
+    ['Robustesse', r=>r.robustesse],
+    ['Conformité', r=>r.conformite.replace(/_/g,' ')],
+  ];
+  b.appendChild(tableau(['Indicateur'].concat(noms.map(n=>scenarios[n].libelle||n)),
+    rows.map(([lib,fn])=>[lib].concat(noms.map(n=>fn(scenarios[n]))))));
+  c.appendChild(b);
+
+  // -- allocation marginale
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Affectation marginale de l\'enveloppe'));
+  b.appendChild(el('p','note','Chaque bloc de '+eur(sortie.pas)+' est affecté au levier qui procure la meilleure valeur marginale. Les points de bascule proviennent des règles (plafonds, seuils de PASS, tranches d\'IS et d\'IR), jamais d\'un paramétrage arbitraire.'));
+  const compte = {};
+  sortie.trace.forEach(t=>{ if(typeof t.bloc==='number') compte[t.levier]=(compte[t.levier]||0)+sortie.pas; });
+  const total = Object.values(compte).reduce((a,x)=>a+x,0)||1;
+  const COUL = {remuneration:'var(--v-menthe)', dividendes:'var(--v-menthe-vif)',
+    abondement_pee:'var(--v-positif)', abondement_pereco:'var(--v-menthe-soft)',
+    interessement:'var(--v-alerte)', tresorerie:'var(--v-gris-bleu)'};
+  const casc = el('div','cascade');
+  Object.keys(compte).sort((x,y)=>compte[y]-compte[x]).forEach(k=>{
+    const s = el('div','seg');
+    const barre = el('div','barre'); barre.style.width=(compte[k]/total*70)+'%';
+    barre.style.background=COUL[k]||'var(--bordure)';
+    s.appendChild(barre);
+    s.appendChild(el('span','',esc(k.replace(/_/g,' '))+' — '+eur(compte[k])));
+    casc.appendChild(s);
+  });
+  b.appendChild(casc);
+  if(sortie.scenarios_exclus.length){
+    b.appendChild(el('h3','','Scénarios exclus'));
+    sortie.scenarios_exclus.forEach(x=>{
+      const d = el('div','alerte bloquant');
+      d.appendChild(el('h4','',esc(x.levier.replace(/_/g,' '))+' — '+esc(x.classement)));
+      d.appendChild(el('p','',esc(x.motif)));
+      d.appendChild(el('div','src',esc(x.fondement)));
+      b.appendChild(d);
+    });
+  }
+  c.appendChild(b);
+
+  // -- anatomie des cotisations
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Anatomie des cotisations — scénario recommandé'));
+  b.appendChild(tableau(['Cotisation','Payeur','Assiette','Taux','Montant','Droits générés','Nature'],
+    opt.cotisations.map(l=>[esc(l.libelle), l.payeur, eur(l.assiette), pct(l.taux), eur(l.montant),
+      esc(l.droits), l.caractere.replace(/_/g,' ')])));
+  const contrib = opt.cotisations.filter(l=>l.caractere.indexOf('contributif')===0).reduce((s,l)=>s+l.montant,0);
+  const solid = opt.cotisations.filter(l=>l.caractere==='solidarite').reduce((s,l)=>s+l.montant,0);
+  b.appendChild(el('p','note','Sur '+eur(contrib+solid)+' de prélèvements sociaux professionnels, '+eur(contrib)+
+    ' financent des droits personnels et '+eur(solid)+' relèvent de la solidarité, sans contrepartie proportionnelle. '+
+    'Les points de retraite complémentaire continuent d\'être acquis au-delà de 1 PASS : une cotisation au-dessus du plafond n\'est pas mécaniquement dépourvue de droits.'));
+  c.appendChild(b);
+
+  // -- alertes
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Détection proactive'));
+  if(!alertes.length) b.appendChild(el('p','note','Aucune opportunité ni point de vigilance détecté.'));
+  alertes.forEach(a=>{
+    const d = el('div','alerte '+(a.niveau==='alerte'?'alerte-forte':a.niveau));
+    d.appendChild(el('h4','','<span class="badge">'+esc(a.niveau)+'</span> '+esc(a.titre)));
+    d.appendChild(el('p','',esc(a.message)));
+    d.appendChild(el('div','src',esc(a.justification)+(a.reserve?' — '+esc(a.reserve):'')));
+    b.appendChild(d);
+  });
+  (opt.alertes||[]).forEach(a=>{
+    const d = el('div','alerte '+(a.niveau==='bloquant'?'bloquant':'vigilance'));
+    d.appendChild(el('h4','','<span class="badge">'+esc(a.niveau)+'</span> '+esc(a.code)));
+    d.appendChild(el('p','',esc(a.message)));
+    b.appendChild(d);
+  });
+  c.appendChild(b);
+
+  // -- robustesse
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Score de robustesse — '+LIB_ROB[opt.robustesse]));
+  const ul = el('ul','actions');
+  opt.motifs_robustesse.forEach(m=>ul.appendChild(el('li','',esc(m))));
+  b.appendChild(ul);
+  c.appendChild(b);
+
+  // -- chronologie
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Chronologie d\'exécution'));
+  b.appendChild(tableau(['#','Action','Responsable','Document','Preuve à conserver'],
+    chrono.map(e=>[e.ordre, esc(e.action), esc(e.responsable), esc(e.document), esc(e.preuve)])));
+  c.appendChild(b);
+
+  // -- hypothèses
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Hypothèses retenues'));
+  const h = ctx.hypotheses;
+  b.appendChild(tableau(['Hypothèse','Valeur'],[
+    ['Rendement de l\'épargne', pct(h.rendement_epargne)],
+    ['Horizon de projection', h.horizon_annees+' ans'],
+    ['Fiscalité de sortie de l\'épargne retraite', pct(h.fiscalite_future_epargne_retraite)],
+    ['Valeur pour le dirigeant d\'1 € conservé en société', pct(h.coef_valeur_tresorerie_societe)],
+    ['Taux d\'adhésion des salariés à l\'abondement', pct(h.taux_adhesion_salaries)],
+    ['Coût d\'illiquidité annuel', pct(h.cout_illiquidite_annuel)],
+    ['Durée de service de la rente (valorisation des droits)', M.get('retraite.hypotheses_valorisation.duree_service_rente_annees')+' ans'],
+    ['Taux d\'actualisation réel', pct(M.get('retraite.hypotheses_valorisation.taux_actualisation_reel'))],
+    ['Taux d\'imposition de la rente à la retraite', pct(M.get('retraite.hypotheses_valorisation.taux_imposition_rente_a_la_retraite'))],
+  ]));
+  b.appendChild(el('p','note','Les trois dernières lignes ne sont pas des données réglementaires : elles convertissent une rente viagère en capital équivalent. Le tableau de comparaison affiche également la rente annuelle brute et les trimestres, qui eux ne dépendent d\'aucune hypothèse actuarielle.'));
+  c.appendChild(b);
+}
+
+function rendreExpert(sortie, opt, actuel, incertitude, ctx){
+  const c = document.getElementById('vue-expert'); c.innerHTML='';
+
+  let b = el('div','bloc carte');
+  b.appendChild(el('h3','','Moteur d\'incertitude'));
+  b.appendChild(el('p','','<span class="badge '+(incertitude.conclusion_automatique_possible?'ok':'risk')+'">'+
+    (incertitude.conclusion_automatique_possible?'Conclusion automatique possible':'Validation humaine requise')+
+    '</span> '+esc(incertitude.message)));
+  if(incertitude.motifs.length){
+    const ul=el('ul','actions'); incertitude.motifs.forEach(m=>ul.appendChild(el('li','',esc(m)))); b.appendChild(ul);
+  }
+  c.appendChild(b);
+
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Qualification du statut'));
+  b.appendChild(tableau(['Élément','Valeur'],[
+    ['Statut social', esc(sortie.qualification.statut_social)],
+    ['Régime fiscal de la rémunération', esc(sortie.qualification.regime_fiscal_remuneration)],
+    ['Justification', esc(sortie.qualification.justification)],
+    ['Fondement', esc(sortie.qualification.fondement)],
+  ]));
+  c.appendChild(b);
+
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Règles appliquées et sources'));
+  const regles = M.reglesUtilisees();
+  b.appendChild(tableau(['Règle','Intitulé','Confiance','Source','Vérifié le'],
+    regles.map(r=>[esc(r.rule_id), esc(r.title),
+      '<span class="badge '+(r.confidence==='high'?'ok':(r.confidence==='low'?'risk':'warn'))+'">'+esc(r.confidence)+'</span>',
+      esc(r.source), esc(r.last_verified)])));
+  const limites = regles.filter(r=>r.confidence!=='high'&&r.confidence!=='n/a');
+  if(limites.length){
+    b.appendChild(el('h3','','Règles à confiance limitée — à confirmer avant remise client'));
+    limites.forEach(r=>{
+      const d = el('div','alerte '+(r.confidence==='low'?'alerte-forte':'vigilance'));
+      d.appendChild(el('h4','',esc(r.rule_id)+' — '+esc(r.title)));
+      if(r.note) d.appendChild(el('p','',esc(r.note)));
+      d.appendChild(el('div','src',esc(r.source)));
+      b.appendChild(d);
+    });
+  }
+  c.appendChild(b);
+
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Contrôles de cohérence'));
+  b.appendChild(tableau(['Contrôle','Niveau','Écart','Message'],
+    opt.controles.map(x=>[esc(x.code),
+      '<span class="badge '+(x.niveau==='ok'?'ok':(x.niveau==='erreur'?'risk':'warn'))+'">'+esc(x.niveau)+'</span>',
+      x.ecart===undefined?'—':x.ecart.toFixed(2)+' €', esc(x.message)])));
+  b.appendChild(el('p','note','Règle fondamentale : tout euro doit être traçable de la société jusqu\'au patrimoine du dirigeant, aux prélèvements ou à la trésorerie résiduelle. Un écart supérieur à 0,51 € bloque le scénario.'));
+  c.appendChild(b);
+
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Détail de calcul'));
+  const d = opt.detail;
+  b.appendChild(tableau(['Élément','Valeur'],[
+    ['Assiette sociale de la rémunération', eur(d.assiette_sociale_remuneration)],
+    ['Brut salarial (assimilé salarié)', d.brut_salarial?eur(d.brut_salarial):'sans objet'],
+    ['Revenu fiscal de référence', eur(d.rfr)],
+    ['Taux marginal d\'imposition réel', pct(d.taux_marginal_ir)],
+    ['Plafond PER disponible', eur(d.plafond_per.disponible)],
+    ['dont plafond de l\'année', eur(d.plafond_per.plafond_retenu)],
+    ['dont report antérieur', eur(d.plafond_per.report_anterieur)],
+    ['Bénéfice distribuable', eur(d.distribuable)],
+    ['Seuil des 10 % (dividendes TNS)', d.seuil_10_dividendes?eur(d.seuil_10_dividendes.seuil):'sans objet'],
+    ['Montant de référence', d.seuil_10_dividendes?eur(d.seuil_10_dividendes.montant_reference):'sans objet'],
+    ['Coût d\'illiquidité déduit', eur(d.cout_illiquidite)],
+    ['Fiscalité différée du PER (fraction déductible)', eur(d.fiscalite_differee)],
+    ['Prélèvements sociaux estimés à la sortie de l\'épargne salariale', eur(d.ps_sortie_epargne_salariale)],
+    ['Revenus du capital hors simulation — brut', eur(d.capital_externe.brut)],
+    ['dont prélèvements sociaux', eur(d.capital_externe.prelevements_sociaux)],
+    ['dont IR forfaitaire imputé sur la CDHR', eur(d.capital_externe.ir_forfaitaire)],
+    ['IS — taux réduit applicable', d.is_detail.taux_reduit_applicable?'oui':'non'],
+    ['IS — taux effectif', pct(d.is_detail.taux_effectif)],
+  ]));
+  c.appendChild(b);
+
+  b = el('div','bloc carte');
+  b.appendChild(el('h3','','Journal de décision'));
+  const journal = {
+    horodatage: new Date().toISOString().slice(0,19),
+    millesime_referentiel: M.get('meta.millesime'),
+    version_referentiel: M.get('meta.version_referentiel'),
+    derniere_verification: M.get('meta.last_verified'),
+    donnees_utilisees: ctx,
+    objectif: sortie.objectif,
+    qualification: sortie.qualification,
+    regles_appliquees: regles,
+    regles_a_confiance_limitee: limites,
+    scenarios_exclus: sortie.scenarios_exclus,
+    trace_optimisation: sortie.trace,
+    controles: opt.controles,
+    allocation_retenue: opt.allocation,
+    indicateurs: {
+      cout_entreprise: opt.cout_entreprise, impot_societes: opt.impot_societes,
+      cotisations: opt.cotisations_totales, impot_revenu: opt.impot_revenu,
+      cehr: opt.cehr, cdhr: opt.cdhr, net_immediat: opt.net_immediat,
+      epargne_bloquee: opt.epargne_bloquee, epargne_retraite: opt.epargne_retraite,
+      tresorerie_residuelle: opt.tresorerie_residuelle, valeur_globale: opt.valeur_globale,
+      robustesse: opt.robustesse
+    },
+    comparaison_impot: {
+      sans_strategie: actuel.impot_revenu+actuel.cehr+actuel.cdhr,
+      avec_strategie: opt.impot_revenu+opt.cehr+opt.cdhr,
+      fiscalite_differee: opt.detail.fiscalite_differee
+    },
+    validation_humaine: null
+  };
+  const pre = el('pre','',esc(JSON.stringify(journal,null,1)));
+  b.appendChild(pre);
+  const row = el('div','rangee-actions');
+  const btn1 = el('button','btn btn-contour','Copier le journal');
+  btn1.type='button';
+  btn1.onclick=()=>{navigator.clipboard.writeText(JSON.stringify(journal,null,1)); btn1.textContent='Copié';
+    setTimeout(()=>btn1.textContent='Copier le journal',1500);};
+  const btn2 = el('button','btn btn-contour','Télécharger (JSON)');
+  btn2.type='button';
+  btn2.onclick=()=>{const bl=new Blob([JSON.stringify(journal,null,1)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(bl);
+    a.download='journal-simulation-dirigeant.json'; a.click();};
+  row.appendChild(btn1); row.appendChild(btn2);
+  b.appendChild(row);
+  c.appendChild(b);
+}
+
+// ---------- simulation ----------
+// Contrôle de vraisemblance des saisies. Sans lui, `parseFloat(v)||0` convertit
+// silencieusement un champ vide ou illisible en 0, et une détention de 500 % ou
+// un âge négatif ressortaient « conformes ». On refuse de calculer plutôt que de
+// produire un résultat faux d'apparence crédible.
+function validerSaisies(ctx){
+  const pb = [];
+  const e = ctx.entreprise, d = ctx.dirigeant, f = ctx.foyer, h = ctx.hypotheses;
+  const borne = (val, min, max, lib, unite) => {
+    if(!isFinite(val)) { pb.push(lib+' : valeur non numérique.'); return; }
+    if(val < min || val > max) pb.push(lib+' : '+val+(unite||'')+' hors de la plage attendue ('+min+unite+' à '+max+unite+').');
+  };
+  borne(d.detention*100, 0, 100, 'Détention du dirigeant', ' %');
+  borne(d.age, 16, 90, 'Âge du dirigeant', ' ans');
+  borne(f.nb_enfants, 0, 12, 'Enfants à charge', '');
+  borne(e.nb_salaries, 0, 100000, 'Nombre de salariés', '');
+  borne(h.horizon_annees, 1, 40, 'Horizon', ' ans');
+  borne(d.taux_atmp*100, 0, 20, 'Taux AT/MP', ' %');
+  [['Chiffre d\'affaires HT', e.ca_ht], ['Trésorerie', e.tresorerie],
+   ['Réserves distribuables', e.reserves_distribuables], ['Capital social', e.capital_social],
+   ['Primes d\'émission', e.primes_emission], ['Compte courant', e.compte_courant_associe_moyen],
+   ['Masse salariale', e.masse_salariale], ['Coût actuel de la rémunération', d.remuneration_actuelle],
+   ['Dividendes actuels', d.dividendes_actuels], ['Salaires du conjoint', f.autres_revenus_salaires],
+   ['Autres revenus imposables', f.autres_revenus_imposables],
+   ['Revenus du capital hors simulation', f.revenus_capital_hors_scenario],
+   ['Plafond PER reporté', f.plafond_per_reporte], ['PER déjà versé', f.per_deja_verse]
+  ].forEach(([lib, val]) => { if(!(val >= 0)) pb.push(lib+' : un montant négatif ou illisible a été saisi.'); });
+  if(e.resultat_avant_remuneration <= 0){
+    pb.push('Résultat avant rémunération du dirigeant : le moteur répartit une enveloppe positive. '
+      + 'Une entreprise déficitaire relève d\'une analyse manuelle, pas de cet outil.');
+  }
+  if(e.nb_salaries > 0 && !(e.masse_salariale > 0)){
+    pb.push('Masse salariale : elle doit être renseignée dès qu\'il existe au moins un salarié '
+      + '(elle conditionne le chiffrage du coût collectif de l\'épargne salariale).');
+  }
+  return pb;
+}
+
+function simuler(){
+  const ctx = lire();
+  const problemes = validerSaisies(ctx);
+  if(problemes.length){
+    document.getElementById('vue-client').innerHTML =
+      '<div class="carte"><h3>Saisie à corriger avant calcul</h3>'
+      + '<p class="note">Le moteur refuse de produire un chiffrage sur des données incohérentes.</p>'
+      + '<ul class="actions">' + problemes.map(p => '<li>'+esc(p)+'</li>').join('') + '</ul></div>';
+    return;
+  }
+  try{
+    M.setReferentiel(window.__PARAMS__);
+    const actuel = M.scenarioActuel(ctx);
+    const sortie = M.optimiser(ctx, ctx.objectifs.objectif_principal);
+    const opt = sortie.resultat;
+    const autres = {};
+    ['net_immediat','patrimoine_net','retraite','compromis'].forEach(o=>{
+      if(o!==sortie.objectif) autres[o] = M.optimiser(ctx,o).resultat;
+    });
+    const scenarios = Object.assign({actuel, optimise:opt}, autres);
+    const n1 = M.niveauClient(actuel, opt, sortie.objectif);
+    rendreClient(n1, opt, actuel);
+    rendreConseiller(scenarios, opt, actuel, M.detecterAlertes(ctx, actuel, opt), M.chronologie(opt), sortie, ctx);
+    rendreExpert(sortie, opt, actuel, M.moteurIncertitude(opt), ctx);
+  }catch(err){
+    document.getElementById('vue-client').innerHTML =
+      '<div class="carte"><h3>Le calcul n\'a pas abouti</h3><p>'+esc(err.message)+'</p></div>';
+    console.error(err);
+  }
+}
+document.getElementById('btn-simuler').addEventListener('click', simuler);
+document.getElementById('form').addEventListener('submit', e=>{e.preventDefault(); simuler();});
+simuler();
+})();
+</script>
+</body>
+</html>

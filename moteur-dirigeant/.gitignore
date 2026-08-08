@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# Données clients : jamais dans le dépôt
+donnees-clients/
+*.client.json
