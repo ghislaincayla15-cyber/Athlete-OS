@@ -4,6 +4,7 @@ const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => crypto.randomUUID();
 const localKey = 'athlete-personal-trial-v1';
+const legacyKey = 'athlete-os-v3';
 const blank = () => ({profile:null,sessions:[],goals:[]});
 const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const parseDate = s => new Date(`${s}T12:00:00`);
@@ -22,6 +23,17 @@ const configured=Boolean(config.supabaseUrl && config.supabasePublishableKey);
 if(configured && window.supabase){try{client=window.supabase.createClient(config.supabaseUrl,config.supabasePublishableKey)}catch{console.error('Configuration de connexion invalide.')}}
 function notify(text){$('#notice').textContent=text;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>$('#notice').textContent='',5500)}
 function validDoc(d){return d && typeof d==='object' && Array.isArray(d.sessions) && Array.isArray(d.goals) && (d.profile===null || (typeof d.profile==='object' && typeof d.profile.name==='string'))}
+function migrateLegacy(){
+ try{
+  const raw=localStorage.getItem(legacyKey); if(!raw) return null;
+  const old=JSON.parse(raw), start=old?.program?.startDate; if(!start) return null;
+  const days=[['Bas A — Force','strength',60],['Haut A — Force','strength',70],['Course 1 — Zone 2','running',40],['Bas B — Unilatéral','strength',60],['Haut B — Volume','strength',65],['Course 2 — Technique','running',35]];
+  const sessions=[];
+  for(let w=0;w<10;w++) days.forEach((d,i)=>sessions.push({id:uid(),title:d[0],type:d[1],date:addDays(start,w*7+i),duration:d[2],status:'planned',notes:'Séance reprise du Bloc 1 historique.',exercises:[]}));
+  const name=old?.athlete?.name || 'Athlète';
+  return {profile:{name,focus:'Bloc 1 — Recomposition & base',frequency:6},sessions,goals:[]};
+ }catch{return null}
+}
 async function persist(next){
  if(busy) throw new Error('Un enregistrement est déjà en cours.'); busy=true;
  try {
@@ -63,7 +75,7 @@ function sessionEditor(id,date){const s=doc.sessions.find(x=>x.id===id) || {id:'
 function goalEditor(id){const g=doc.goals.find(x=>x.id===id) || {id:'',title:'',start:0,current:0,target:'',unit:'',deadline:''};modal(g.id?'Mon objectif':'Nouvel objectif',`<form id="goal-form" data-id="${esc(g.id)}" class="form-stack"><label>Objectif<input name="title" maxlength="120" value="${esc(g.title)}" placeholder="Ex. courir 10 km sans m’arrêter" required></label><div class="form-grid"><label>Valeur de départ<input name="start" type="number" step="any" value="${g.start}" required></label><label>Valeur actuelle<input name="current" type="number" step="any" value="${g.current}" required></label><label>Cible<input name="target" type="number" step="any" value="${g.target}" required></label><label>Unité<input name="unit" maxlength="30" value="${esc(g.unit)}" placeholder="km, séances, kg…" required></label></div><label>Échéance (facultative)<input name="deadline" type="date" value="${g.deadline}"></label><p class="field-help">La progression fonctionne pour une cible à la hausse comme à la baisse.</p><p class="error" role="alert"></p><div class="dialog-actions">${g.id?`<button type="button" class="danger quiet" data-delete-goal="${esc(g.id)}">Supprimer</button>`:''}<button class="primary">Enregistrer l’objectif</button></div></form>`)}
 function auth(){if(!client){modal('Les comptes arrivent bientôt',`<p>La connexion n’est pas encore activée sur cette version. Vous pouvez déjà créer vos séances dans un essai enregistré sur cet appareil.</p><div class="dialog-actions"><button class="primary" data-action="trial">Essayer sur cet appareil</button></div>`);return}modal('Votre espace personnel',`<p class="muted" style="margin-bottom:22px">Nouveau ou déjà inscrit : recevez un lien de connexion par e-mail. Aucun mot de passe à retenir.</p><form id="auth-form" class="form-stack"><label>Adresse e-mail<input name="email" type="email" autocomplete="email" required></label><p class="field-help">Votre espace sera créé après confirmation de votre adresse. Les données d’essai ne sont pas transférées automatiquement.</p><p class="error" role="alert"></p><button class="primary">Recevoir mon lien de connexion</button></form>`)}
 async function loadCloud(){const owner=user?.id;if(!owner)return;mode='cloud';doc=blank();revision=null;loadFailed=false;$('#app').innerHTML='<p class="loading">Chargement de votre espace personnel…</p>';try{const {data,error}=await client.from('athlete_spaces').select('data,revision').eq('user_id',owner).maybeSingle();if(user?.id!==owner || mode!=='cloud')return;if(error)throw error;if(data){if(!validDoc(data.data))throw new Error('Format de données non reconnu');doc=data.data;revision=data.revision}}catch{if(user?.id!==owner || mode!=='cloud')return;loadFailed=true}render()}
-async function trial(){close();try{const raw=localStorage.getItem(localKey);const stored=raw?JSON.parse(raw):blank();if(!validDoc(stored))throw new Error();doc=stored;mode='local';user=null;revision=null;loadFailed=false;render()}catch{notify('Impossible de lire votre essai. Les données existantes ont été conservées.')}}
+async function trial(){close();try{const raw=localStorage.getItem(localKey);let stored=raw?JSON.parse(raw):null;if(!stored){stored=migrateLegacy();if(stored)localStorage.setItem(localKey,JSON.stringify(stored))}stored=stored||blank();if(!validDoc(stored))throw new Error();doc=stored;mode='local';user=null;revision=null;loadFailed=false;render();if(stored.sessions.length)notify('Votre planning historique a été repris dans Ma semaine.')}catch{notify('Impossible de lire votre essai. Les données existantes ont été conservées.')}}
 document.addEventListener('click',async event=>{
  const b=event.target.closest('button');if(!b || busy)return;
  try{
