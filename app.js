@@ -1,8 +1,16 @@
 (function () {
-  const APP_VERSION = "9.5.1";
-  const STORAGE_KEY = "athlete-os-v3";
-  const SAFE_KEY = "athlete-os-v3-safe"; // miroir de secours, jamais écrasé par du vide
-  const LEGACY_KEY = "athlete-os-v2";
+  const APP_VERSION = "9.6.0";
+  const ACCESS_PROFILE = new URLSearchParams(window.location.search).get("athlete")
+    ?.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-]/g, "")
+    .slice(0, 32) || "";
+  const ACCESS_LABEL = ACCESS_PROFILE ? ACCESS_PROFILE.charAt(0).toUpperCase() + ACCESS_PROFILE.slice(1) : "";
+  const PROFILE_SUFFIX = ACCESS_PROFILE ? `:${ACCESS_PROFILE}` : "";
+  const STORAGE_KEY = `athlete-os-v3${PROFILE_SUFFIX}`;
+  const SAFE_KEY = `athlete-os-v3-safe${PROFILE_SUFFIX}`; // miroir de secours, jamais écrasé par du vide
+  const LEGACY_KEY = `athlete-os-v2${PROFILE_SUFFIX}`;
 
   // v9.0.0 : cinq onglets, repris de la maquette Stitch. Ghislain ne trouvait
   // pas « où on met ce qu'on a fait ou non » : « Rattraper » devient un onglet
@@ -9547,7 +9555,7 @@
           <div class="brand-mark">AO</div>
           <div>
             <p class="brand-title">Athlete OS</p>
-            <p class="brand-subtitle">v${APP_VERSION} · cockpit personnel</p>
+            <p class="brand-subtitle">${ACCESS_LABEL ? `Espace ${escapeHtml(ACCESS_LABEL)}` : `v${APP_VERSION} · cockpit personnel`}</p>
           </div>
         </div>
         <nav class="nav-stack" aria-label="Navigation principale">${renderNav()}</nav>
@@ -9630,6 +9638,7 @@
               <p>${escapeHtml(page.subtitle)}</p>
             </div>
             <div class="top-actions">
+              ${ACCESS_LABEL ? `<span class="access-profile" aria-label="Espace sportif de ${escapeHtml(ACCESS_LABEL)}">${escapeHtml(ACCESS_LABEL)}</span>` : ""}
               <button type="button" class="icon-button" data-action="toggle-theme" aria-label="Changer de theme">${icon(state.theme === "dark" ? "sun" : "moon")}</button>
               <button type="button" class="icon-button" data-action="toggle-settings" aria-label="Paramètres">${icon("settings")}</button>
             </div>
