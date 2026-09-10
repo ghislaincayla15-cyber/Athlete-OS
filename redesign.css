@@ -1,0 +1,117 @@
+/* Athlete OS — nouvelle direction visuelle appliquée au suivi complet. */
+:root {
+  --bg: #101512;
+  --bg-strong: #0d120f;
+  --surface: #19201b;
+  --surface-muted: #222b24;
+  --line: #364037;
+  --line-strong: #4b584b;
+  --text: #f0f1e9;
+  --muted: #bac3b9;
+  --subtle: #909c90;
+  --volt: #c1dc89;
+  --volt-bright: #d2eba4;
+  --volt-ink: #17220e;
+  --green: #c1dc89;
+  --green-soft: rgba(193, 220, 137, 0.13);
+  --orange: #f3be88;
+  --orange-soft: rgba(243, 190, 136, 0.13);
+  --red: #ffb6aa;
+  --indigo: #c6cdb4;
+  --blue: #b8cec0;
+  --radius: 18px;
+  --radius-sm: 12px;
+  --radius-xs: 9px;
+  --glow: none;
+  --font-display: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body { background: var(--bg); letter-spacing: -0.005em; }
+.layout { grid-template-columns: 236px minmax(0, 1fr); }
+.sidebar { padding: 32px 21px; background: var(--bg-strong); border-right-color: var(--line); backdrop-filter: none; }
+.brand { padding: 0 4px 38px; }
+.brand-mark { width: 36px; height: 36px; border: 0; border-radius: 10px; background: var(--volt); color: var(--volt-ink); font-size: 0; }
+.brand-mark::after { content: "a."; font-size: 1.1rem; font-weight: 850; }
+.brand-title { font-size: 1.05rem; letter-spacing: -0.035em; }
+.brand-subtitle { color: var(--subtle); line-height: 1.35; }
+.nav-stack { gap: 7px; }
+.nav-button { min-height: 46px; padding: 11px 13px; border-radius: 11px; color: var(--muted); font-weight: 620; }
+.nav-button:hover { background: var(--surface); }
+.nav-button.active { background: var(--surface-muted); color: var(--volt); box-shadow: none; }
+.nav-button.active .nav-icon { color: var(--volt); }
+.mini-source { border-radius: 13px; background: var(--surface); }
+.main { padding: 32px 46px 110px; }
+.topbar { max-width: 1320px; margin-bottom: 30px; align-items: center; }
+.topbar h1 { font-size: clamp(2rem, 3vw, 3rem); font-weight: 650; letter-spacing: -0.05em; }
+.topbar p { margin-top: 10px; max-width: 68ch; color: var(--muted); font-size: 0.95rem; }
+.content { max-width: 1320px; }
+
+.icon-button,
+.secondary-button,
+.ghost-button,
+.quick-button,
+.segmented-button { border-radius: 10px; border-color: var(--line); background: var(--surface-muted); }
+.primary-button { min-height: 46px; padding-inline: 18px; border-radius: 10px; background: var(--volt); color: var(--volt-ink); box-shadow: none; }
+.primary-button:hover { background: var(--volt-bright); transform: translateY(-1px); }
+.primary-button:active { transform: translateY(0); }
+
+.today-subnav { gap: 5px; padding: 5px; border-radius: 13px; background: var(--surface); backdrop-filter: none; }
+.today-subnav-button { min-height: 42px; border-radius: 9px; padding-inline: 16px; font-weight: 650; }
+.today-subnav-button.active { background: var(--volt); color: var(--volt-ink); }
+.page-grid, .section-grid { gap: 20px; }
+
+.card,
+.decision-card,
+.score-card,
+.workout-card,
+.form-panel,
+.source-card,
+.chat-card { border-color: var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: none; }
+.card, .form-panel, .source-card, .chat-card { padding: 24px; }
+.workout-card { padding: 26px; }
+.card h2, .workout-card h2 { font-weight: 650; letter-spacing: -0.03em; }
+.eyebrow { margin-bottom: 8px; color: var(--subtle); font-size: 0.67rem; letter-spacing: 0.075em; }
+.badge { border-radius: 8px; }
+.day-card, .cal-day { border-color: var(--line); border-radius: 13px; background: var(--surface-muted); }
+.day-label { border-radius: 10px; background: var(--bg); }
+.cal-day.today { border-color: var(--volt); background: var(--green-soft); }
+.cal-micro { border-left: 0; padding-left: 0; color: var(--muted); }
+
+input[type="text"], input[type="number"], input[type="date"], select, textarea, .presc-fields input {
+  min-height: 46px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--bg);
+}
+input:focus, select:focus, textarea:focus { outline: 3px solid color-mix(in srgb, var(--volt) 30%, transparent); outline-offset: 2px; border-color: var(--volt); }
+
+.mobile-nav {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  gap: 0;
+  padding: 7px 9px calc(7px + var(--safe-bottom));
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--bg-strong);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.mobile-nav-button { min-height: 60px; border-radius: 10px; color: var(--muted); }
+.mobile-nav-button.active { background: var(--surface-muted); color: var(--volt); }
+.mobile-nav-button.active .nav-icon, .mobile-nav-button.active svg { color: var(--volt); stroke: var(--volt); }
+
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .main { padding: max(22px, env(safe-area-inset-top, 0px)) 18px calc(102px + var(--safe-bottom)); }
+}
+@media (max-width: 720px) {
+  .topbar { margin-bottom: 22px; }
+  .topbar h1 { font-size: 2.15rem; }
+  .card, .decision-card, .workout-card, .form-panel, .source-card, .chat-card { padding: 19px; border-radius: 16px; }
+  .today-subnav { top: max(4px, env(safe-area-inset-top, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
